@@ -16,7 +16,225 @@ from matplotlib import ticker
 import statistics
 import subprocess
 from collections import defaultdict
+from multiprocessing import Queue, Process
 
+
+def generate_summary_figure():
+    # I think it would be good to generate a summary figure the same as we did for the
+    # tara data
+    # I will try to recycle the code as best I can
+    # would be good to have: raw contigs, post-qc, scleractinian and non-scleractinian
+    # However, to work with the same code as we had with the tara data we will need to already have the
+    # quantitative stats collected. We will have to use the directories listed
+    # in the info_df and look for the summary files for each of the steps and extract what we need from them.
+
+    info_df = generate_info_df_for_samples()
+
+    # a dict that will hold the sample_name and the values for each of the qc levels
+    for ind in info_df.index.values.tolist():
+        # go to the directory and read in each of the
+        # stability.trim.contigs.fasta for the contig summary
+
+        # run a summary.seqs on the stability.trim.contigs.good.unique.abund.pcr.fasta
+
+        # read in the dictionaries to get the taxa counts for both coral and non-coral reads
+        apples = 'asdf'
+
+    # here we can add the new data as columns to the info_df and pickle this out so that it is automatically
+    # loaded in future
+
+    # then we should be able make the figure using the tara code.
+    return
+
+
+# the sequence_QC method has taken care of the basic mothur qc for us. The next step will be to run a blast
+# analysis for each of the samples that we have
+# In each directory we should have a stability.trim.contigs.good.unique.abund.pcr.fasta paired with a
+# stability.trim.contigs.good.abund.pcr.names. We should work with these pairs and produce a dictionary
+# that will give sequence name to taxonomic id.
+
+def generate_tax_dictionaries(numProc=20):
+    # we are only interested in the coral samples.
+    # as such we should filter these out when doing the MPing.
+    info_df = generate_info_df_for_samples()
+
+    input_q_for_blast = Queue()
+
+    for ind in info_df.index.values.tolist():
+        if 'CORAL' in info_df[ind, 'fastq_fwd_file_path']:
+            input_q_for_blast.put(info_df.loc[ind, 'fastq_fwd_file_path'])
+
+    for n in range(numProc):
+        input_q_for_blast.put('STOP')
+
+    all_procs = []
+    for n in range(numProc):
+        p = Process(target=mothur_worker, args=(input_q_for_blast,))
+        all_procs.append(p)
+        p.start()
+
+    for p in all_procs:
+        p.join()
+
+    return
+
+def blast_worker(input_q):
+    # this is the mp worker. We will aim to go to each of the directories and perform a blast and
+    # and produce a dictionary that will be sequence id to taxonomic designation
+
+    for path_tup in iter(input_q.get, 'STOP'):
+
+        sample_dir = '/'.join(path_tup[0].split('/')[:-1])
+
+        # Write out the hidden file that points to the ncbi database directory.
+        ncbircFile = []
+        # db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'symbiodiniumDB'))
+
+        db_path = '/home/humebc/phylogeneticSoftware/ncbi-blast-2.6.0+/ntdbdownload'
+        ncbircFile.extend(["[BLAST]", "BLASTDB={}".format(db_path)])
+
+        # write out the ncbircFile
+        with open(sample_dir, 'w') as f:
+            for line in ncbircFile:
+                f.write('{}\n'.format(line))
+
+        # write out the screened fasta so that it can be read in to the blast
+        # make sure to reference the sequence support and the iteration
+        input_fasta_path = '{}/stability.trim.contigs.good.unique.abund.pcr.fasta'.format(sample_dir)
+
+
+        # Set up environment for running local blast
+        blastOutputPath = '{}/blast.out'.format(sample_dir)
+        outputFmt = "6 qseqid sseqid staxids evalue pident qcovs staxid stitle ssciname"
+
+
+        # Run local blast
+        # completedProcess = subprocess.run([blastnPath, '-out', blastOutputPath, '-outfmt', outputFmt, '-query', inputPath, '-db', 'symbiodinium.fa', '-max_target_seqs', '1', '-num_threads', '1'])
+        completedProcess = subprocess.run(
+            ['blastn', '-out', blastOutputPath, '-outfmt', outputFmt, '-query', input_fasta_path, '-db', 'nt',
+             '-max_target_seqs', '10', '-num_threads', '20'])
+
+        # Read in blast output
+        with open(blastOutputPath, 'r') as f:
+            blast_output_file = [line.rstrip() for line in f]
+
+        # at this point we should have the blast output result read in
+        # we can now make the taxa dictionary
+        # this dict will hold the taxa for all samples
+        sample_tax_dict = {}
+
+        # this dict will hold the matches for a subset which are the coral samples
+        scleractinian_reads = {}
+        for output_line in blast_output_file:
+            components = output_line.split('\t')
+            seq_name = 'asdfples'
+            seq_taxa_match = 'asdfas'
+
+
+
+
+# this function will be responsible for creating the processed name and fasta paris from the fastq files
+# that can be found in the info df
+def sequence_QC(numProc=20):
+    # for the time being I will run the samples through essentially the same processing as the basic
+    # SymPortal processing.
+    # this processing should be MPed
+    info_df = generate_info_df_for_samples()
+
+    # lets make an iput queue that is going to be each of the samples
+    mothur_qc_input_queue = Queue()
+
+    # for each sample in the info_df I will add a tuple that is a pair of the fwd and rev directories to the fastq.gz
+    for ind in info_df.index.values.tolist():
+        mothur_qc_input_queue.put((info_df.loc[ind, 'fastq_fwd_file_path'], info_df.loc[ind, 'fastq_rev_file_path']))
+
+    for n in range(numProc):
+        mothur_qc_input_queue.put('STOP')
+
+    all_procs = []
+    for n in range(numProc):
+        p = Process(target=mothur_worker, args=(mothur_qc_input_queue,))
+        all_procs.append(p)
+        p.start()
+
+    for p in all_procs:
+        p.join()
+
+    return
+
+def mothur_worker(input_q):
+
+    for path_tup in iter(input_q.get, 'STOP'):
+
+        sample_dir = '/'.join(path_tup[0].split('/')[:-1])
+
+        # the 18S V9 region primers
+        primerFwdSeq = 'TTGTACACACCGCCC'  # Written 5'-->3'
+        primerRevSeq = 'CCTTCYGCAGGTTCACCTAC'  # Written 5'-->3'
+
+        oligoFile = [
+            r'#1389F',
+            'forward\t{0}'.format(primerFwdSeq),
+            r'#1510R',
+            'reverse\t{0}'.format(primerRevSeq)
+        ]
+
+        oligo_file_path = '{}/primers.oligos'.format(sample_dir)
+
+
+
+        stability_file = ['{}\t{}'.format(path_tup[0], path_tup[1])]
+        stability_file_path = '{}/stability.files'.format(sample_dir)
+        root_name = 'stability'
+
+        # write out stability file
+        with open(stability_file_path, 'w') as f:
+            for line in stability_file:
+                f.write('{}\n'.format(line))
+
+        # write out oligo file
+        with open(oligo_file_path, 'w') as f:
+            for line in oligoFile:
+                f.write('{}\n'.format(line))
+
+        # here we have the stability file written out and the oligo file
+
+        # The mothur batch file that will be run by mothur.
+        mBatchFile = [
+            r'set.dir(input={0})'.format(sample_dir),
+            r'set.dir(output={0})'.format(sample_dir),
+            r'make.contigs(file={}, processors=20)'.format(stability_file_path),
+            r'summary.seqs(fasta={}/{}.trim.contigs.fasta)'.format(sample_dir, root_name),
+            r'screen.seqs(fasta={0}/{1}.trim.contigs.fasta, maxambig=0, maxhomop=5)'.format(
+                sample_dir, root_name),
+            r'summary.seqs(fasta={0}/{1}.trim.contigs.good.fasta)'.format(sample_dir, root_name),
+            r'unique.seqs(fasta={0}/{1}.trim.contigs.good.fasta)'.format(sample_dir, root_name),
+            r'summary.seqs(fasta={0}/{1}.trim.contigs.good.unique.fasta, name={0}/{1}.trim.contigs.good.names)'.format(
+                sample_dir, root_name),
+            r'split.abund(cutoff=2, fasta={0}/{1}.trim.contigs.good.unique.fasta, name={0}/{1}.trim.contigs.good.names)'.format(
+                sample_dir, root_name),
+            r'summary.seqs(fasta={0}/{1}.trim.contigs.good.unique.abund.fasta, name={0}/{1}.trim.contigs.good.abund.names)'.format(
+                sample_dir, root_name),
+            r'summary.seqs(fasta={0}/{1}.trim.contigs.good.unique.rare.fasta, name={0}/{1}.trim.contigs.good.rare.names)'.format(
+                sample_dir, root_name),
+            r'pcr.seqs(fasta={0}/{1}.trim.contigs.good.unique.abund.fasta, name={0}/{1}.trim.contigs.good.abund.names, oligos={0}/primers.oligos, pdiffs=2, rdiffs=2)'.format(
+                sample_dir, root_name)
+        ]
+
+        mBatchFile_path = '{}/mBatchFile'.format(sample_dir)
+
+        # write out batch file
+        with open(mBatchFile_path, 'w') as f:
+            for line in mBatchFile:
+                f.write('{}\n'.format(line))
+
+        # run the mothur processing
+        # subprocess.run(['mothur', r'{0}'.format(mBatchFile_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        subprocess.run(['mothur', r'{0}'.format(mBatchFile_path)])
+
+        sys.stdout.write('mothur complete for {}'.format(sample_dir))
+
+    return
 
 # This is a function to parse over the directory stucture that was on the TARA/Genescope ftp and create
 # an information dataframe
@@ -243,4 +461,4 @@ def create_info_df_from_info_collection_dict(columns_for_df, info_collection_dic
     return info_df
 
 
-generate_info_df_for_samples()
+sequence_QC()
