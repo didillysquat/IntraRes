@@ -27,20 +27,30 @@ from multiprocessing import Queue, Process
 # the first step for this is to generate an info df.
 # we can generate this from the current info_df
 # we should call it fig_info_df
-def generate_fig_info_df():
+def generate_fig_indo_df(info_df):
+    if os.path.isfile('{}/fig_info_df.pickle'.format(os.getcwd())):
+        return pickle.load(open('{}/fig_info_df.pickle'.format(os.getcwd()), 'rb'))
+    else:
+        fig_info_df = pd.DataFrame(columns=['island', 'site', 'genus', 'individual', 'sample_dir'])
+        for ind in info_df.index.values.tolist():
+            if 'CORAL' in info_df.loc[ind, 'fastq_fwd_file_path']:
+                fastq_string = info_df.loc[ind, 'fastq_fwd_file_path']
+                components = fastq_string.split('/')
+                smp_site = components[-6]
+                smp_island = components[-7]
+                smp_individual = components[-3]
+                smp_genus = components[-4]
+                smp_dir = '/'.join(components[:-1])
+                fig_info_df = fig_info_df.append(
+                    pd.Series(name=ind, data=[smp_island, smp_site, smp_genus, smp_individual, smp_dir],
+                              index=['island', 'site', 'genus', 'individual', 'sample_dir']))
+        pickle.dump(fig_info_df, open('{}/fig_info_df.pickle'.format(os.getcwd()), 'wb'))
+        return fig_info_df
+
+def generate_fig():
     info_df = generate_info_df_for_samples()
 
-    fig_info_df = pd.DataFrame(columns = ['island', 'site', 'genus', 'individual', 'sample_dir'])
-    for ind in info_df.index.values.tolist():
-        if 'CORAL' in info_df.loc[ind, 'fastq_fwd_file_path']:
-            fastq_string = info_df.loc[ind, 'fastq_fwd_file_path']
-            components = fastq_string.split('/')
-            smp_site = components[-6]
-            smp_island = components[-7]
-            smp_individual = components[-3]
-            smp_genus = components[-4]
-            smp_dir = '/'.join(components[:-1])
-            fig_info_df = fig_info_df.append(pd.Series(name = ind, data = [smp_island, smp_site, smp_genus, smp_individual, smp_dir], index=['island', 'site', 'genus', 'individual', 'sample_dir']))
+    fig_info_df = generate_fig_indo_df(info_df)
 
     # here we have the fig_info_df generated. We can use this for making the figure
     # SETUP AXES
@@ -80,15 +90,127 @@ def generate_fig_info_df():
     # before we move onto the actual plotting of the samples we should create an sp_output_df_div equivalent
     # for the samples. This will mean going through each of the coral sample directories and collecting relative
     # abundances. We will do this using the genus specific fastas.
-    sample_seqs_df = generate_seq_abundance_df()
-    # so first lets finish these fastas
-    # plot_data_axes(ax_list, extra_ax_list, colour_dict_div, colour_dict_type, info_df, ordered_sample_list,
-    #                smp_id_to_smp_name_dict,
-    #                smp_name_to_smp_id_dict, sp_output_df_div, sp_output_df_type, individual_info)
+    sample_abundance_df = generate_seq_abundance_df(fig_info_df)
+    colour_dict = generate_colour_dict(sample_abundance_df)
+
+    plot_data_axes(ax_list, leg_axes, colour_dict, fig_info_df, sample_abundance_df)
 
     return
 
-def generate_seq_abundance_df(numProc=20):
+def plot_data_axes(ax_list, leg_axes, colour_dict, fig_info_df, sample_abundance_df):
+
+    ax_count = 0
+    extra_ax_count = 0
+    for site in ['SITE01', 'SITE02', 'SITE03']:
+        for location in ['ISLAND06', 'ISLAND10', 'ISLAND15']:
+            for spp in ['PORITES', 'POCILLOPORA', 'MILLEPORA']:
+                ax = ax_list[ax_count]
+                patches_list = []
+                ind = 0
+                colour_list = []
+
+                # for each set of location, site and spp, we basically want to get a list of the samples
+                # that meet the set criteria, we then want to plot samples according to the ordered_sample_list
+                # order which will be in IDs. As such we will have to convert the sample_name in the info_df
+                # to a sample ID using the smp_name_to_smp_id_dict.
+
+                # get sample_names that fit the requirements
+                sample_names_of_set = fig_info_df.loc[
+                    (fig_info_df['location'] == location) &
+                    (fig_info_df['site'] == site) &
+                    (fig_info_df['spp_water'] == spp)
+                    ].index.values.tolist()
+
+
+
+                num_smp_in_this_subplot = len(sample_names_of_set)
+                x_tick_label_list = []
+
+                for smple_id_to_plot in sample_names_of_set:
+                    # General plotting
+                    sys.stdout.write('\rPlotting sample: {}'.format(smple_id_to_plot))
+                    x_tick_label_list.append(smple_id_to_plot)
+                    # for each sample we will start at 0 for the y and then add the height of each bar to this
+
+                    # PLOT DIVs
+                    plot_div_over_type(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df)
+
+
+                    ind += 1
+
+                paint_rect_to_axes_div_and_type(ax=ax, colour_list=colour_list,
+                                                num_smp_in_this_subplot=num_smp_in_this_subplot,
+                                                patches_list=patches_list,
+                                                x_tick_label_list=x_tick_label_list,
+                                                max_num_smpls_in_subplot=10)
+
+                ax_count += 1
+
+
+
+def paint_rect_to_axes_div_and_type(ax, colour_list, num_smp_in_this_subplot,  patches_list, x_tick_label_list=None,  max_num_smpls_in_subplot=10):
+    # We can try making a custom colour map
+    # https://matplotlib.org/api/_as_gen/matplotlib.colors.ListedColormap.html
+    this_cmap = ListedColormap(colour_list)
+    # here we should have a list of Rectangle patches
+    # now create the PatchCollection object from the patches_list
+    patches_collection = PatchCollection(patches_list, cmap=this_cmap)
+    patches_collection.set_array(np.arange(len(patches_list)))
+    # if n_subplots is only 1 then we can refer directly to the axarr object
+    # else we will need ot reference the correct set of axes with i
+    # Add the pathces to the axes
+    ax.add_collection(patches_collection)
+    ax.autoscale_view()
+    ax.figure.canvas.draw()
+    # also format the axes.
+    # make it so that the x axes is constant length
+    ax.set_xlim(0 - 0.5, max_num_smpls_in_subplot - 0.5)
+    ax.set_ylim(-0.2, 1)
+    # ax.set_xticks(range(num_smp_in_this_subplot))
+    # ax.set_xticklabels(x_tick_label_list, rotation='vertical', fontsize=6)
+
+    remove_axes_but_allow_labels(ax)
+
+    # as well as getting rid of the top and right axis splines
+    # I'd also like to restrict the bottom spine to where there are samples plotted but also
+    # maintain the width of the samples
+    # I think the easiest way to do this is to hack a bit by setting the x axis spines to invisible
+    # and then drawing on a line at y = 0 between the smallest and largest ind (+- 0.5)
+    # ax.spines['bottom'].set_visible(False)
+    ax.add_line(Line2D((0 - 0.5, num_smp_in_this_subplot - 0.5), (0, 0), linewidth=2, color='black'))
+
+
+def plot_div_over_type(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df):
+    bottom_div = 0
+    # for each sequence, create a rect patch
+    # the rect will be 1 in width and centered about the ind value.
+    for seq in list(sample_abundance_df):
+        # class matplotlib.patches.Rectangle(xy, width, height, angle=0.0, **kwargs)
+        rel_abund_div = sample_abundance_df.loc[smple_id_to_plot, seq]
+        if rel_abund_div > 0:
+            patches_list.append(Rectangle((ind - 0.5, bottom_div), 1, rel_abund_div, color=colour_dict[seq]))
+            # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
+            colour_list.append(colour_dict[seq])
+            bottom_div += rel_abund_div
+
+def generate_colour_dict(sample_abundance_df):
+    # the purpose of this is to return a seuence to colour dictionary that we will pickle out to maintain
+    # continuity
+    # make the colour list and the grey list
+    # then get the sequence order from the sample_abundance_df
+    # then associate to the colours until we are out of colours
+    colour_dict = {}
+    colour_list = get_colour_list()
+    grey_palette = ['#D0CFD4', '#89888D', '#4A4A4C', '#8A8C82', '#D4D5D0', '#53544F']
+    for i, seq_name in enumerate(list(sample_abundance_df)):
+        if i < len(sample_abundance_df):
+            colour_dict[seq_name] = colour_list[i]
+        else:
+            colour_dict[seq_name] = grey_palette[i%6]
+    return colour_dict
+
+
+def generate_seq_abundance_df(fig_info_df, numProc=20):
     # the purpose of this will be to get a dataframe that contains the sequence abundances for each of the samples
     # this will only contain the sequence abundances for the specific genus coral sequences
     # so it will not contain any zooxs seqs or non-scleractinian zooxs.
@@ -100,252 +222,209 @@ def generate_seq_abundance_df(numProc=20):
     # of the seuqencs so that we can plot the most abundant sequencs first.
 
     # this df only holds info for the coral samples so there is no need to filter
-    fig_info_df = generate_info_df_for_samples()
 
-    input_q = Queue()
+    if os.path.isfile('{}/sample_abundance_df.pkl'.format(os.getcwd())):
+        sample_abundance_df = pd.read_pickle('{}/sample_abundance_df.pkl'.format(os.getcwd()))
+    else:
+        input_q = Queue()
 
-    for ind in fig_info_df.index.values.tolist():
-        input_q.put((ind, fig_info_df.loc[ind, 'sample_dir']))
+        for ind in fig_info_df.index.values.tolist():
+            input_q.put((ind, fig_info_df.loc[ind, 'sample_dir']))
 
-    for n in range(numProc):
-        input_q.put('STOP')
+        for n in range(numProc):
+            input_q.put('STOP')
 
 
-    all_procs = []
-    for n in range(numProc):
-        p = Process(target=abundance_worker, args=(input_q, ))
-        all_procs.append(p)
-        p.start()
+        all_procs = []
+        for n in range(numProc):
+            p = Process(target=abundance_worker, args=(input_q, ))
+            all_procs.append(p)
+            p.start()
 
-    for p in all_procs:
-        p.join()
-    return
+        for p in all_procs:
+            p.join()
+
+        # at this stage we have pickled out abundance dictionaries for each of the samples in their
+        # respective directories
+        # now go through each of samples and check to see if each of the seqs is found in the master seq dict
+        # or if it is a subset or superset of any of the strings. This has the potential to be very slow
+        # so we could maybe chunk this and do it MP. But for the time being lets try to do it serial.
+        # first we will go through each of the samples and generate a set of sequence for the master_abund_dict
+        # that will be the largest superset sequences of all the sequences found in the samples
+        # once we've done that, then we will go back through the sequences and see which sequences the sample's sequecnes
+        # should be associated to. We should pickle out along the way to save us time if we have to re-run
+
+        # just out of interest I want to see how many times we have a match list greater than 1
+        if os.path.isfile('{}/master_abund_dict.pickle'.format(os.getcwd())):
+            master_abund_dict = pickle.load(open('{}/master_abund_dict.pickle'.format(os.getcwd()), 'rb'))
+        else:
+            big_match_counter = 0
+            total = 0
+            master_abund_dict = defaultdict(float)
+            for ind in fig_info_df.index.values.tolist():
+                print('Counting {}'.format(ind))
+                sample_dir = fig_info_df.loc[ind, 'sample_dir']
+                sample_abund_dict = pickle.load(open('{}/seq_abund_dict.pickle'.format(sample_dir), 'rb'))
+                for sample_key_sequence, v_sample in sample_abund_dict.items():
+                    total += 1
+                    # for each of the sequences, see if it is found within one of the master_abund_dicts
+                    # check to see that it is not found in > than one of the sequences too. If it is then this is a problem
+                    # but there may be a simple solution, i.e. consolidating the two sequences.
+
+                    # list that holds the sequences that are either a subset or superset of the sample sequence
+                    match_list = []
+                    for master_key_sequence, v_master in master_abund_dict.items():
+
+                        if sample_key_sequence in master_key_sequence or master_key_sequence in sample_key_sequence:
+                            match_list.append(master_key_sequence)
+
+                    # here we have checked each of the master sequences
+                    if not match_list:
+                        # if the match list is empty then this is a new sequence and we can add it to the master_abund_dict
+                        master_abund_dict[sample_key_sequence] += v_sample
+                    elif len(match_list) == 1:
+                        # then we have a single match.
+                        if sample_key_sequence in match_list[0]:
+                            # if the sample is a subset of one of the master_abund_dicts then its
+                            # abundance should be attributed to this sequence
+                            master_abund_dict[match_list[0]] += v_sample
+                        elif match_list[0] in sample_key_sequence:
+                            # else if the sample sequences contains the master sequence, then the master sequence
+                            # should be updated to the seq in question, the current abundance should be associated
+                            # to this new sequence and the abundance of the seq in q should also be attributed (added)
+                            temp_abundance = master_abund_dict[match_list[0]]
+                            del master_abund_dict[match_list[0]]
+                            master_abund_dict[sample_key_sequence] = temp_abundance
+                            master_abund_dict[sample_key_sequence] += v_sample
+                    elif len(match_list) > 1:
+                        # then we have a bit of a problem here and we need to work out what to do from looking at the
+                        # situation
+                        # this is a particular situation and has happened when there is a sequence that is shorter than the
+                        # majority and one of the sequences has a differntiating snp in the difference in sequence length.
+                        # for the time being I will attribute the abundance of this sequence to the most abundant match
+                        most_abund_seq = [a[0] for a in sorted([(seq, master_abund_dict[seq]) for seq in match_list], key=lambda x: x[1], reverse=True)][0]
+                        master_abund_dict[most_abund_seq] += v_sample
+                        big_match_counter += 1
+                        continue
+            # at this point we have the master_abund_dict populated and we should pickle it out
+            pickle.dump(master_abund_dict, open('{}/master_abund_dict.pickle'.format(os.getcwd()), 'wb'))
+        apples = 'asdf'
+
+        # now we once again go sample by sample and then seq by seq and check all of the seqs
+        # thar are in the master dict. Then when we find an association we use that to populate to the dataframe
+        sorted_tups = sorted(list(master_abund_dict.items()), key=lambda x:x[1], reverse=True)
+        header_seq_s = [a[0] for a in sorted_tups]
+        sample_abundance_df = pd.DataFrame(columns=header_seq_s)
+
+        total_matches_evaluated = 0
+        multi_match_list = 0
+        no_match = 0
+        for ind in fig_info_df.index.values.tolist():
+
+            # create an empty sequence that will be full of float 0s to start with
+            sample_abundance_series = pd.Series(name=ind, data=[float(0) for i in header_seq_s], index=header_seq_s)
+            print('Populating df with {}'.format(ind))
+            sample_dir = fig_info_df.loc[ind, 'sample_dir']
+            if os.path.isfile('{}/sample_abundance_series.pkl'.format(sample_dir)):
+                sample_abundance_series = pd.read_pickle('{}/sample_abundance_series.pkl'.format(sample_dir))
+            else:
+                sample_abund_dict = pickle.load(open('{}/seq_abund_dict.pickle'.format(sample_dir), 'rb'))
+                # for every sequence in the sample
+                for sample_key_sequence, v_sample in sample_abund_dict.items():
+                    total_matches_evaluated += 1
+                    # list that holds the sequences that are either a subset or superset of the sample sequence
+                    match_list = []
+                    exact_match = False
+                    for master_key_sequence, v_master in master_abund_dict.items():
+                        if sample_key_sequence == master_key_sequence:
+                        # then we have an exact match and this is the sequence that the abundance should be associated
+                        # to.
+                        # else continue to work with the match_list etc.
+                            sample_abundance_series[master_key_sequence] += v_sample
+                            exact_match = True
+                            break
+                        if sample_key_sequence in master_key_sequence or master_key_sequence in sample_key_sequence:
+                            match_list.append(master_key_sequence)
+                    if exact_match:
+                        continue
+                    # here we have not acheived an exact match and we should work with the list
+                    # here we have checked each of the master sequences
+                    if not match_list:
+                        # this should never happen
+                        no_match += 1
+                        continue
+                    elif len(match_list) == 1:
+                        # then we have a single match and this is the column of the df that we should associate the
+                        # abundance to
+                        sample_abundance_series[match_list[0]] += v_sample
+
+                    elif len(match_list) > 1:
+                        # then we have a bit of a problem here and we need to work out what to do from looking at the
+                        # situation
+                        # this is a particular situation and has happened when there is a sequence that is shorter than the
+                        # majority and one of the sequences has a differntiating snp in the difference in sequence length.
+                        # for the time being I will attribute the abundance of this sequence to the most abundant match
+                        multi_match_list += 1
+                        sorted_tups_temp = sorted([(seq, master_abund_dict[seq]) for seq in match_list], key=lambda x: x[1],
+                                                 reverse=True)
+                        most_abund_seq = [a[0] for a in sorted_tups_temp][0]
+                        sample_abundance_series[most_abund_seq] += v_sample
+                # here we have the series for the sample populated.
+                # now add this to the dataframe
+                # pickle out the series to save time
+                sample_abundance_series.to_pickle('{}/sample_abundance_series.pkl'.format(sample_dir))
+            sample_abundance_df = sample_abundance_df.append(sample_abundance_series)
+        # at this point we have fully populated the sample_abundance_df and we should pickle it out
+        sample_abundance_df.to_pickle('{}/sample_abundance_df.pkl'.format(os.getcwd()))
+
+    return sample_abundance_df
 
 def abundance_worker(input_q):
+    # within this method we will aim to create a dict and pickle it out so that it can be read in outside
+    # of this MP.
     for sample_name, sample_dir in iter(input_q.get, 'STOP'):
+        # check to see if the sample's abundance dictionary has already been created
+        if os.path.isfile('{}/seq_abund_dict.pickle'.format(sample_dir)):
+            continue
+
+        # I want this dictionary to have key as the raw sequence as value
+        sample_dict = defaultdict(int)
+
         sys.stdout.write('\nSample {}\n'.format(sample_dir))
-        genus_of_sample = sample_dir.split('/')[-3]
+
+
+        # for each sample we will only need two files
+        # we will need the name file inorder to create an abundance dict
+        # then we will need the coral_genus_only.fasta file so that we know which sequences we should be counting
+
+        #read in the name file
+        with open('{}/stability.trim.contigs.good.abund.pcr.names'.format(sample_dir), 'r') as f:
+            name_file = [line.rstrip() for line in f]
+
+        abund_dict = {line.split('\t')[0]:len(line.split('\t')[1].split(',')) for line in name_file}
+
+        # now read in the coral_genus_only.fasta
+        with open('{}/coral_genus_only.fasta'.format(sample_dir), 'r') as f:
+            coral_genus_fasta = [line.rstrip() for line in f]
+
+        # here we have the abund dict and the coral_genus fasta
+        # now we can go sesquence by sequence through the fasta and look up the abund and add to the sample_dict
+        # Becuase we didn't do a find seqs.unique it is quite possible that there are sequences that are the same
+        # and so we should use a default dict to make the abundance dictionary for the sample
+        for i in range(0, len(coral_genus_fasta), 2):
+            sample_dict[coral_genus_fasta[i + 1]] += abund_dict[coral_genus_fasta[i][1:]]
+
+        # now normalise the seq abundances
+        tot_seqs = sum(sample_dict.values())
+        normalised_sample_dict = {k: v/tot_seqs for k, v in sample_dict.items()}
+
+        # here we have the samples abundance dictionary populated. Now pickle out
+        pickle.dump(normalised_sample_dict, open('{}/seq_abund_dict.pickle'.format(sample_dir), 'wb'))
 
 
     return
 
-# def plot_data_axes(ax_list, extra_ax_list, colour_dict_div, colour_dict_type, info_df, ordered_sample_list,
-#                    smp_id_to_smp_name_dict,
-#                    smp_name_to_smp_id_dict, sp_output_df_div, sp_output_df_type, indi_indo):
-#     ax_count = 0
-#     extra_ax_count = 0
-#     for site in ['SITE01', 'SITE02', 'SITE03']:
-#         for location in ['ISLAND06', 'ISLAND10', 'ISLAND15']:
-#             for spp in ['PORITES', 'POCILLOPORA', 'MILLEPORA']:
-#                 ax = ax_list[ax_count]
-#                 patches_list = []
-#                 ind = 0
-#                 colour_list = []
-#
-#                 # for each set of location, site and spp, we basically want to get a list of the samples
-#                 # that meet the set criteria, we then want to plot samples according to the ordered_sample_list
-#                 # order which will be in IDs. As such we will have to convert the sample_name in the info_df
-#                 # to a sample ID using the smp_name_to_smp_id_dict.
-#
-#                 # get sample_names that fit the requirements
-#                 sample_names_of_set = info_df.loc[
-#                     (info_df['location'] == location) &
-#                     (info_df['site'] == site) &
-#                     (info_df['spp_water'] == spp)
-#                     ].index.values.tolist()
-#
-#                 # temporarily remove CO0002044, CO0002041
-#                 # from the above list
-#                 # if 'CO0002044' or 'CO0002041' in sample_names_of_set:
-#                 #     sample_names_of_set = [name for name in sample_names_of_set if
-#                 #                            name not in ['CO0002044', 'CO0002041']]
-#
-#                 # convert these to sample IDs
-#                 # The sample names in symportal are actually the full file names version rather than
-#                 # the shorter versions in the info_df. As such we should we will have to do a conversion here
-#                 full_sample_names = [
-#                     '_'.join(info_df.loc[smp_name]['fastq_fwd_file_path'].split('/')[-1].split('_')[:3]) for
-#                     smp_name in
-#                     sample_names_of_set]
-#                 try:
-#                     smple_ids_of_set = [smp_name_to_smp_id_dict[smp_name] for smp_name in full_sample_names]
-#                 except:
-#                     apples = 'asdf'
-#                 # now we want to plot in the order of the ordered_sample_list
-#                 ordered_smple_ids_of_set = [smpl_id for smpl_id in ordered_sample_list if
-#                                             smpl_id in smple_ids_of_set]
-#
-#                 coral_csw_x_val_tup_list = None
-#                 if spp == 'POCILLOPORA':
-#                     # here we need to work out if any of these are csw associated samples
-#                     # if so then we need to follow through and get the id of them
-#                     coral_csw_id_one = None
-#                     coral_csw_id_ten = None
-#                     for smp_name in sample_names_of_set:
-#                         if smp_name in indi_indo.keys():
-#                             # use the same logic below to get the id of this sample
-#                             temp_full_name = '_'.join(
-#                                 info_df.loc[smp_name]['fastq_fwd_file_path'].split('/')[-1].split('_')[:3])
-#                             # then this is one of the csw associated samples
-#                             if indi_indo[smp_name] == 'INDIVIDUAL1':
-#                                 coral_csw_id_one = smp_name_to_smp_id_dict[temp_full_name]
-#                             elif indi_indo[smp_name] == 'INDIVIDUAL10':
-#                                 coral_csw_id_ten = smp_name_to_smp_id_dict[temp_full_name]
-#
-#                     # now we need to get the x values of where to draw the line to and from for the csw associated corals
-#                     # we can work this out by seeing what the index of the sample ids are in the ordered_smple list
-#                     # as the width we use is 1, the x values will then be the index -+ 0.5
-#                     coral_csw_x_val_tup_list = []
-#                     if coral_csw_id_one:
-#                         if coral_csw_id_one in ordered_smple_ids_of_set:
-#                             temp_index_of_sample_in_list = ordered_smple_ids_of_set.index(coral_csw_id_one)
-#                             coral_csw_x_value_tup = (
-#                             temp_index_of_sample_in_list - 0.5, temp_index_of_sample_in_list + 0.5, 'brown')
-#                             coral_csw_x_val_tup_list.append(coral_csw_x_value_tup)
-#                     if coral_csw_id_ten:
-#                         if coral_csw_id_ten in ordered_smple_ids_of_set:
-#                             temp_index_of_sample_in_list = ordered_smple_ids_of_set.index(coral_csw_id_ten)
-#                             coral_csw_x_value_tup = (
-#                             temp_index_of_sample_in_list - 0.5, temp_index_of_sample_in_list + 0.5, 'gray')
-#                             coral_csw_x_val_tup_list.append(coral_csw_x_value_tup)
-#
-#                 num_smp_in_this_subplot = len(ordered_smple_ids_of_set)
-#                 x_tick_label_list = []
-#
-#                 for smple_id_to_plot in ordered_smple_ids_of_set:
-#                     # General plotting
-#                     sys.stdout.write('\rPlotting sample: {}'.format(smple_id_to_plot))
-#                     x_tick_label_list.append(smp_id_to_smp_name_dict[smple_id_to_plot].split('_')[0])
-#                     # for each sample we will start at 0 for the y and then add the height of each bar to this
-#
-#                     # PLOT DIVs
-#                     plot_div_over_type(colour_dict_div, colour_list, ind, patches_list, smple_id_to_plot,
-#                                        sp_output_df_div)
-#
-#                     # PLOT type
-#                     plot_type_under_div(colour_dict_type, colour_list, ind, patches_list, smple_id_to_plot,
-#                                         sp_output_df_type)
-#                     ind += 1
-#
-#                 paint_rect_to_axes_div_and_type(ax=ax, colour_list=colour_list,
-#                                                 num_smp_in_this_subplot=num_smp_in_this_subplot,
-#                                                 patches_list=patches_list,
-#                                                 coral_csw_x_val_tup_list=coral_csw_x_val_tup_list,
-#                                                 x_tick_label_list=x_tick_label_list,
-#                                                 max_num_smpls_in_subplot=10)
-#
-#                 ax_count += 1
-#
-#             # PLOT csw and surface
-#
-#             # first identify which the csw sample is
-#             csw_samples = info_df.loc[
-#                 (info_df['location'] == location) &
-#                 (info_df['site'] == site) &
-#                 (info_df['spp_water'] == 'CSW')
-#                 ].index.values.tolist()
-#
-#             # convert these to sample IDs
-#             # The sample names in symportal are actually the full file names version rather than
-#             # the shorter versions in the info_df. As such we should we will have to do a conversion here
-#             full_sample_names_csw = [
-#                 '_'.join(info_df.loc[smp_name]['fastq_fwd_file_path'].split('/')[-1].split('_')[:3]) for
-#                 smp_name in csw_samples]
-#             smple_ids_of_set_csw = [smp_name_to_smp_id_dict[smp_name] for smp_name in full_sample_names_csw]
-#
-#             # here we need to work out which sample is which individual for the csw association to corals
-#
-#             coral_csw_id_one = None
-#             coral_csw_id_ten = None
-#             for smp_name in csw_samples:
-#                 if smp_name in indi_indo.keys():
-#                     # use the same logic below to get the id of this sample
-#                     temp_full_name = '_'.join(
-#                         info_df.loc[smp_name]['fastq_fwd_file_path'].split('/')[-1].split('_')[:3])
-#                     # then this is one of the csw associated samples
-#                     if indi_indo[smp_name] == 'INDIVIDUAL1':
-#                         coral_csw_id_one = smp_name_to_smp_id_dict[temp_full_name]
-#                     elif indi_indo[smp_name] == 'INDIVIDUAL10':
-#                         coral_csw_id_ten = smp_name_to_smp_id_dict[temp_full_name]
-#
-#             # now we need to get the x values of where to draw the line to and from for the csw associated corals
-#             # we can work this out by seeing what the index of the sample ids are in the ordered_smple list
-#             # as the width we use is 1, the x values will then be the index -+ 0.5
-#             coral_csw_x_val_tup_list = []
-#
-#             if coral_csw_id_one and coral_csw_id_ten:
-#                 # then both exist
-#                 # check to see that they are in the order 'one' then 'ten'. if not, reverse
-#                 if smple_ids_of_set_csw.index(coral_csw_id_one) == 1:
-#                     # then we need to reverse
-#                     smple_ids_of_set_csw = list(reversed(smple_ids_of_set_csw))
-#                 # now add the tuples to the coral_csw_x_val_tup_list
-#                 for i, colour in enumerate(['brown', 'gray']):
-#                     coral_csw_x_value_tup = (i - 0.5, i + 0.5, colour)
-#                     coral_csw_x_val_tup_list.append(coral_csw_x_value_tup)
-#
-#             num_smp_in_this_subplot = len(ordered_smple_ids_of_set)
-#             x_tick_label_list = []
-#
-#             colour_list = []
-#             ind = 0
-#             patches_list = []
-#             for smple_id_to_plot in smple_ids_of_set_csw:
-#                 bottom_div = 0
-#                 # for each sequence, create a rect patch
-#                 # the rect will be 1 in width and centered about the ind value.
-#                 for seq in list(sp_output_df_div):
-#                     # class matplotlib.patches.Rectangle(xy, width, height, angle=0.0, **kwargs)
-#                     rel_abund_div = sp_output_df_div.loc[smple_id_to_plot, seq]
-#                     if rel_abund_div > 0:
-#                         patches_list.append(
-#                             Rectangle((ind - 0.5, bottom_div), 1, rel_abund_div, color=colour_dict_div[seq]))
-#                         # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
-#                         colour_list.append(colour_dict_div[seq])
-#                         bottom_div += rel_abund_div
-#                 ind += 1
-#
-#             paint_rect_to_axes_div_and_type(ax=extra_ax_list[extra_ax_count], colour_list=colour_list,
-#                                             num_smp_in_this_subplot=2,
-#                                             coral_csw_x_val_tup_list=coral_csw_x_val_tup_list,
-#                                             patches_list=patches_list, max_num_smpls_in_subplot=2)
-#             extra_ax_count += 1
-#
-#             # now get the surface sample
-#             surface_sample = info_df.loc[
-#                 (info_df['location'] == location) &
-#                 (info_df['site'] == site) &
-#                 (info_df['spp_water'] == 'SURFACE')
-#                 ].index.values.tolist()[0]
-#
-#             # convert these to sample IDs
-#             # The sample names in symportal are actually the full file names version rather than
-#             # the shorter versions in the info_df. As such we should we will have to do a conversion here
-#             full_sample_name_surface = '_'.join(
-#                 info_df.loc[surface_sample]['fastq_fwd_file_path'].split('/')[-1].split('_')[:3])
-#
-#             smple_id_of_surface_sample = smp_name_to_smp_id_dict[full_sample_name_surface]
-#
-#             colour_list = []
-#             bottom_div = 0
-#             ind = 0
-#             patches_list = []
-#             # for each sequence, create a rect patch
-#             # the rect will be 1 in width and centered about the ind value.
-#             for seq in list(sp_output_df_div):
-#                 # class matplotlib.patches.Rectangle(xy, width, height, angle=0.0, **kwargs)
-#                 rel_abund_div = sp_output_df_div.loc[smple_id_of_surface_sample, seq]
-#                 if rel_abund_div > 0:
-#                     patches_list.append(
-#                         Rectangle((ind - 0.5, bottom_div), 1, rel_abund_div, color=colour_dict_div[seq]))
-#                     # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
-#                     colour_list.append(colour_dict_div[seq])
-#                     bottom_div += rel_abund_div
-#
-#             paint_rect_to_axes_div_and_type(ax=extra_ax_list[extra_ax_count], colour_list=colour_list,
-#                                             num_smp_in_this_subplot=1,
-#                                             patches_list=patches_list, max_num_smpls_in_subplot=2)
-#             extra_ax_count += 1
+
 
 def remove_axes_but_allow_labels(ax, x_tick_label_list=None):
     ax.set_frame_on(False)
@@ -424,36 +503,36 @@ def scleractinia_fasta_worker(input_q):
 
         # for the time being, while we still have the blast worker going we should check to see if
         # the sample has the dictionaries already completed.
-        if not os.path.isfile('{}/sample_tax_dict.pickle'.format(sample_dir)) or not os.path.isfile('{}/scleractinian_dict.pickle'.format(sample_dir)) or not os.path.isfile('{}/symbiodiniaceae_dict.pickle'.format(sample_dir)):
+        if not os.path.isfile('{}/sample_tax_dict.pickle'.format(sample_dir)) or not os.path.isfile('{}/coral_dict.pickle'.format(sample_dir)) or not os.path.isfile('{}/symbiodiniaceae_dict.pickle'.format(sample_dir)):
             continue
 
         # next check to see if we have already generated the fastas for this sample.
-        if os.path.isfile('{}/scleractinian.fasta'.format(sample_dir)) and os.path.isfile('{}/scleractinian_genus_only.fasta'.format(sample_dir)):
+        if os.path.isfile('{}/coral.fasta'.format(sample_dir)) and os.path.isfile('{}/coral_genus_only.fasta'.format(sample_dir)):
             continue
 
-        scleractinian_dict = pickle.load(open('{}/scleractinian_dict.pickle'.format(sample_dir), 'rb'))
+        coral_dict = pickle.load(open('{}/coral_dict.pickle'.format(sample_dir), 'rb'))
 
         # need to read in the fasta that holds the sequences and create a dict
         with open('{}/stability.trim.contigs.good.unique.abund.pcr.fasta'.format(sample_dir), 'r') as f:
             fasta_file = [line.rstrip() for line in f]
-        fasta_dict = {fasta_file[i][1:] :fasta_file[i+1] for i in range(0, len(fasta_file),2)}
+        fasta_dict = {fasta_file[i][1:].split('\t')[0] :fasta_file[i+1] for i in range(0, len(fasta_file),2)}
 
-        scleractinian_fasta = []
+        coral_fasta = []
         genus_fasta = []
-        for seq_name, seq_genus in scleractinian_dict.keys():
-            scleractinian_fasta.append('>{}'.format(seq_name))
-            scleractinian_fasta.append(fasta_dict[seq_name])
-            if seq_genus == genus_of_sample:
+        for seq_name, seq_genus in coral_dict.items():
+            coral_fasta.append('>{}'.format(seq_name))
+            coral_fasta.append(fasta_dict[seq_name])
+            if seq_genus.lower() == genus_of_sample.lower():
                 genus_fasta.append('>{}'.format(seq_name))
                 genus_fasta.append(fasta_dict[seq_name])
 
         # here we have created both of the fastas and we can now write them out
-        with open('{}/scleractinian.fasta'.format(sample_dir), 'w') as f:
-            for line in scleractinian_fasta:
+        with open('{}/coral.fasta'.format(sample_dir), 'w') as f:
+            for line in coral_fasta:
                 f.write('{}\n'.format(line))
 
         # here we have created both of the fastas and we can now write them out
-        with open('{}/scleractinian_genus_only.fasta'.format(sample_dir), 'w') as f:
+        with open('{}/coral_genus_only.fasta'.format(sample_dir), 'w') as f:
             for line in genus_fasta:
                 f.write('{}\n'.format(line))
 
@@ -586,8 +665,6 @@ def get_taxa_designation_from_staxid(staxid, tax_level_list, node_dict=None, nam
         else:
             current_staxid = node_dict[current_staxid][0]
 
-
-
 def blast_worker(input_q, node_dict, name_dict):
     # this is the mp worker. We will aim to go to each of the directories and perform a blast and
     # and produce a dictionary that will be sequence id to taxonomic designation
@@ -597,7 +674,7 @@ def blast_worker(input_q, node_dict, name_dict):
 
         sample_dir = '/'.join(path.split('/')[:-1])
         # we only need to be doing this sample if it hasn't already been done.
-        if os.path.isfile('{}/sample_tax_dict.pickle'.format(sample_dir)) and os.path.isfile('{}/scleractinian_dict.pickle'.format(sample_dir)) and os.path.isfile('{}/symbiodiniaceae_dict.pickle'.format(sample_dir)):
+        if os.path.isfile('{}/sample_tax_dict.pickle'.format(sample_dir)) and os.path.isfile('{}/coral_dict.pickle'.format(sample_dir)) and os.path.isfile('{}/symbiodiniaceae_dict.pickle'.format(sample_dir)):
             continue
 
         # write out the screened fasta so that it can be read in to the blast
@@ -637,16 +714,16 @@ def blast_worker(input_q, node_dict, name_dict):
         # this dict will hold the taxa for all samples
         sample_tax_dict = {}
         # this dict will hold the matches for a subset which are the coral samples
-        scleractinian_dict = {}
+        coral_dict = {}
         # this dict will hold the matches for a subset which are the symbiodiniaceae samples
         symbiodiniaceae_dict = {}
         for blast_key, comp_list_list in blast_output_dict.items():
             sys.stdout.write('\rsequence {}'.format(blast_key))
             symbiodiniaceae_count = 0
             symbiodiniaceae_genus_dict = defaultdict(int)
-            scleractinian_count = 0
+            coral_count = 0
             # a dictionary that will keep track of which genus was the most abundant within the scleractinians
-            scleractinian_genus_dict = defaultdict(int)
+            coral_genus_dict = defaultdict(int)
             other_genus_count_dict = defaultdict(int)
             for comp_list in comp_list_list:
 
@@ -664,10 +741,10 @@ def blast_worker(input_q, node_dict, name_dict):
                     symbiodiniaceae_count += 1
                     symbiodiniaceae_genus_dict[genus_level] += 1
 
-                elif  order_level == 'Scleractinia':
-                    # check to see if we have a scleractinian here and if we do, sore the genus
-                    scleractinian_count += 1
-                    scleractinian_genus_dict[genus_level] += 1
+                elif  order_level == 'Scleractinia' or order_level== 'Anthoathecata':
+                    # check to see if we have a coral here and if we do, sore the genus
+                    coral_count += 1
+                    coral_genus_dict[genus_level] += 1
                 else:
                     # if this is not coral and not symbiodinium then we populate the orther_genus_count_dict
                     other_genus_count_dict[genus_level] += 1
@@ -681,19 +758,19 @@ def blast_worker(input_q, node_dict, name_dict):
                 max_other_taxa_count = max(other_genus_count_dict.values())
             else:
                 max_other_taxa_count = 0
-                if scleractinian_count == 0 and symbiodiniaceae_count == 0:
+                if coral_count == 0 and symbiodiniaceae_count == 0:
                     # then we have had no valid annotations for this seqeunce
                     continue
-            if max_other_taxa_count > max(scleractinian_count, symbiodiniaceae_count):
+            if max_other_taxa_count > max(coral_count, symbiodiniaceae_count):
                 # then this is a not one of the subsets
                 sample_tax_dict[blast_key] = [a[0] for a in sorted(other_genus_count_dict.items(), key=lambda x:x[1], reverse=True)][0]
-            elif scleractinian_count > max(max_other_taxa_count, symbiodiniaceae_count):
+            elif coral_count > max(max_other_taxa_count, symbiodiniaceae_count):
                 # then this is a scleratinian and we should store the order
                 sample_tax_dict[blast_key] = 'Scleractinia'
                 # for the scleractinian dictionary we should associate to the most abundant genus
-                most_abundant_genus_sclerac = [a[0] for a in sorted(scleractinian_genus_dict.items(), key=lambda x:x[1], reverse=True)][0]
-                scleractinian_dict[blast_key] = most_abundant_genus_sclerac
-            elif symbiodiniaceae_count > max(max_other_taxa_count, scleractinian_count):
+                most_abundant_genus_sclerac = [a[0] for a in sorted(coral_genus_dict.items(), key=lambda x:x[1], reverse=True)][0]
+                coral_dict[blast_key] = most_abundant_genus_sclerac
+            elif symbiodiniaceae_count > max(max_other_taxa_count, coral_count):
                 # then this is a Symbiodiniaceae and we should store the genus in the specific dictionary
                 sample_tax_dict[blast_key] = 'Symbiodiniaceae'
                 # for the symbiodiniaceae dictinary we should associate to the most abundant genus
@@ -703,7 +780,7 @@ def blast_worker(input_q, node_dict, name_dict):
         # here we have populated the taxonomy dictionaries for the sample in question
         # we can now pickle out the dictionaries
         pickle.dump(sample_tax_dict, open('{}/sample_tax_dict.pickle'.format(sample_dir), 'wb'))
-        pickle.dump(scleractinian_dict, open('{}/scleractinian_dict.pickle'.format(sample_dir), 'wb'))
+        pickle.dump(coral_dict, open('{}/coral_dict.pickle'.format(sample_dir), 'wb'))
         pickle.dump(symbiodiniaceae_dict, open('{}/symbiodiniaceae_dict.pickle'.format(sample_dir), 'wb'))
 
 
@@ -778,6 +855,7 @@ def mothur_worker(input_q):
         # here we have the stability file written out and the oligo file
 
         # The mothur batch file that will be run by mothur.
+        # todo if you find yourself reusing this you should add in a final unique.seqs at the end
         mBatchFile = [
             r'set.dir(input={0})'.format(sample_dir),
             r'set.dir(output={0})'.format(sample_dir),
@@ -1038,5 +1116,36 @@ def create_info_df_from_info_collection_dict(columns_for_df, info_collection_dic
     info_df = pd.DataFrame.from_items([(s.name, s) for s in series_list]).T
     return info_df
 
-
-generate_tax_dictionaries()
+def get_colour_list():
+    colour_list = ["#FFFF00", "#1CE6FF", "#FF34FF", "#FF4A46", "#008941", "#006FA6", "#A30059", "#FFDBE5",
+                  "#7A4900", "#0000A6", "#63FFAC", "#B79762", "#004D43", "#8FB0FF", "#997D87", "#5A0007", "#809693",
+                  "#FEFFE6", "#1B4400", "#4FC601", "#3B5DFF", "#4A3B53", "#FF2F80", "#61615A", "#BA0900", "#6B7900",
+                  "#00C2A0", "#FFAA92", "#FF90C9", "#B903AA", "#D16100", "#DDEFFF", "#000035", "#7B4F4B", "#A1C299",
+                  "#300018", "#0AA6D8", "#013349", "#00846F", "#372101", "#FFB500", "#C2FFED", "#A079BF", "#CC0744",
+                  "#C0B9B2", "#C2FF99", "#001E09", "#00489C", "#6F0062", "#0CBD66", "#EEC3FF", "#456D75", "#B77B68",
+                  "#7A87A1", "#788D66", "#885578", "#FAD09F", "#FF8A9A", "#D157A0", "#BEC459", "#456648", "#0086ED",
+                  "#886F4C", "#34362D", "#B4A8BD", "#00A6AA", "#452C2C", "#636375", "#A3C8C9", "#FF913F", "#938A81",
+                  "#575329", "#00FECF", "#B05B6F", "#8CD0FF", "#3B9700", "#04F757", "#C8A1A1", "#1E6E00", "#7900D7",
+                  "#A77500", "#6367A9", "#A05837", "#6B002C", "#772600", "#D790FF", "#9B9700", "#549E79", "#FFF69F",
+                  "#201625", "#72418F", "#BC23FF", "#99ADC0", "#3A2465", "#922329", "#5B4534", "#FDE8DC", "#404E55",
+                  "#0089A3", "#CB7E98", "#A4E804", "#324E72", "#6A3A4C", "#83AB58", "#001C1E", "#D1F7CE", "#004B28",
+                  "#C8D0F6", "#A3A489", "#806C66", "#222800", "#BF5650", "#E83000", "#66796D", "#DA007C", "#FF1A59",
+                  "#8ADBB4", "#1E0200", "#5B4E51", "#C895C5", "#320033", "#FF6832", "#66E1D3", "#CFCDAC", "#D0AC94",
+                  "#7ED379", "#012C58", "#7A7BFF", "#D68E01", "#353339", "#78AFA1", "#FEB2C6", "#75797C", "#837393",
+                  "#943A4D", "#B5F4FF", "#D2DCD5", "#9556BD", "#6A714A", "#001325", "#02525F", "#0AA3F7", "#E98176",
+                  "#DBD5DD", "#5EBCD1", "#3D4F44", "#7E6405", "#02684E", "#962B75", "#8D8546", "#9695C5", "#E773CE",
+                  "#D86A78", "#3E89BE", "#CA834E", "#518A87", "#5B113C", "#55813B", "#E704C4", "#00005F", "#A97399",
+                  "#4B8160", "#59738A", "#FF5DA7", "#F7C9BF", "#643127", "#513A01", "#6B94AA", "#51A058", "#A45B02",
+                  "#1D1702", "#E20027", "#E7AB63", "#4C6001", "#9C6966", "#64547B", "#97979E", "#006A66", "#391406",
+                  "#F4D749", "#0045D2", "#006C31", "#DDB6D0", "#7C6571", "#9FB2A4", "#00D891", "#15A08A", "#BC65E9",
+                  "#FFFFFE", "#C6DC99", "#203B3C", "#671190", "#6B3A64", "#F5E1FF", "#FFA0F2", "#CCAA35", "#374527",
+                  "#8BB400", "#797868", "#C6005A", "#3B000A", "#C86240", "#29607C", "#402334", "#7D5A44", "#CCB87C",
+                  "#B88183", "#AA5199", "#B5D6C3", "#A38469", "#9F94F0", "#A74571", "#B894A6", "#71BB8C", "#00B433",
+                  "#789EC9", "#6D80BA", "#953F00", "#5EFF03", "#E4FFFC", "#1BE177", "#BCB1E5", "#76912F", "#003109",
+                  "#0060CD", "#D20096", "#895563", "#29201D", "#5B3213", "#A76F42", "#89412E", "#1A3A2A", "#494B5A",
+                  "#A88C85", "#F4ABAA", "#A3F3AB", "#00C6C8", "#EA8B66", "#958A9F", "#BDC9D2", "#9FA064", "#BE4700",
+                  "#658188", "#83A485", "#453C23", "#47675D", "#3A3F00", "#061203", "#DFFB71", "#868E7E", "#98D058",
+                  "#6C8F7D", "#D7BFC2", "#3C3E6E", "#D83D66", "#2F5D9B", "#6C5E46", "#D25B88", "#5B656C", "#00B57F",
+                  "#545C46", "#866097", "#365D25", "#252F99", "#00CCFF", "#674E60", "#FC009C", "#92896B"]
+    return colour_list
+generate_fig()
