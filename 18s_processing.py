@@ -54,38 +54,7 @@ def generate_fig():
 
     # here we have the fig_info_df generated. We can use this for making the figure
     # SETUP AXES
-    # https://matplotlib.org/users/gridspec.html
-    fig = plt.figure(figsize=(14, 10))
-
-    # the bottom row will be for the legend
-    # the second to last will just be invisible to give a space between the legend and the other plots
-    # we also want to include a gridspec plot after each of the main three. These will hold the csw and surface
-    # samples
-    gs = plt.GridSpec(5, 3, figure=fig, height_ratios=[1, 1, 1, 0.2, 1])
-    # within each of the GrdiSpec subplots we will make a subplotspec which is three plots on one row
-
-    ax_list = []
-
-    grid_spec_subplot_list = []
-    # make the main 3x3 axis
-    for row_ind in range(3):
-        for col_ind in range(3):
-            # put in the main data 3 plots
-            temp_grid_spec_subplot = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=gs[row_ind, col_ind])
-            grid_spec_subplot_list.append(temp_grid_spec_subplot)
-            for i in range(3):
-                # NB this might be a 2d array, lets see.
-                ax = plt.Subplot(fig, temp_grid_spec_subplot[i])
-                ax_list.append(ax)
-                fig.add_subplot(ax)
-
-
-    # now do the invisible row that will give us the space we want
-    ax_space = plt.subplot(gs[3, :])
-    remove_axes_but_allow_labels(ax_space)
-
-    leg_axes = plt.subplot(gs[4, :])
-
+    ax_list, fig = setup_axes()
     # here we have the axes set up.
     # before we move onto the actual plotting of the samples we should create an sp_output_df_div equivalent
     # for the samples. This will mean going through each of the coral sample directories and collecting relative
@@ -93,11 +62,49 @@ def generate_fig():
     sample_abundance_df = generate_seq_abundance_df(fig_info_df)
     colour_dict = generate_colour_dict(sample_abundance_df)
 
-    plot_data_axes(ax_list, leg_axes, colour_dict, fig_info_df, sample_abundance_df)
+    plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, minor_DIV=True)
+    add_labels(ax_list)
+
+
+    fig.savefig('{}/raw_seqs_abund_minor_div_only_stacked.png'.format(os.getcwd()))
+    fig.savefig('{}/raw_seqs_abund_minor_div_only_stacked.svg'.format(os.getcwd()))
 
     return
 
-def plot_data_axes(ax_list, leg_axes, colour_dict, fig_info_df, sample_abundance_df):
+
+def setup_axes():
+    # https://matplotlib.org/users/gridspec.html
+    fig = plt.figure(figsize=(14, 8))
+    # the bottom row will be for the legend
+    # the second to last will just be invisible to give a space between the legend and the other plots
+    # we also want to include a gridspec plot after each of the main three. These will hold the csw and surface
+    # samples
+    gs = plt.GridSpec(5, 3, figure=fig, height_ratios=[1, 0.3, 1, 0.3, 1])
+    # within each of the GrdiSpec subplots we will make a subplotspec which is three plots on one row
+    ax_list = []
+    grid_spec_subplot_list = []
+    increaser = 0
+    # make the main 3x3 axis
+    for row_ind in range(3):
+        for col_ind in range(3):
+            # put in the main data 3 plots
+            temp_grid_spec_subplot = gridspec.GridSpecFromSubplotSpec(1, 3,
+                                                                      subplot_spec=gs[row_ind + increaser, col_ind])
+            grid_spec_subplot_list.append(temp_grid_spec_subplot)
+            for i in range(3):
+                # NB this might be a 2d array, lets see.
+                ax = plt.Subplot(fig, temp_grid_spec_subplot[i])
+                ax_list.append(ax)
+                fig.add_subplot(ax)
+        # now put in the spacer row
+        if increaser < 2:
+            ax_space = plt.subplot(gs[row_ind + 1 + increaser, :])
+            remove_axes_but_allow_labels(ax_space)
+            increaser += 1
+    return ax_list, fig
+
+
+def plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, minor_DIV=False):
 
     ax_count = 0
     extra_ax_count = 0
@@ -116,9 +123,9 @@ def plot_data_axes(ax_list, leg_axes, colour_dict, fig_info_df, sample_abundance
 
                 # get sample_names that fit the requirements
                 sample_names_of_set = fig_info_df.loc[
-                    (fig_info_df['location'] == location) &
+                    (fig_info_df['island'] == location) &
                     (fig_info_df['site'] == site) &
-                    (fig_info_df['spp_water'] == spp)
+                    (fig_info_df['genus'] == spp)
                     ].index.values.tolist()
 
 
@@ -133,7 +140,10 @@ def plot_data_axes(ax_list, leg_axes, colour_dict, fig_info_df, sample_abundance
                     # for each sample we will start at 0 for the y and then add the height of each bar to this
 
                     # PLOT DIVs
-                    plot_div_over_type(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df)
+                    if minor_DIV:
+                        plot_div_over_type_minor_div_only(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df)
+                    else:
+                        plot_div_over_type(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df)
 
 
                     ind += 1
@@ -146,6 +156,27 @@ def plot_data_axes(ax_list, leg_axes, colour_dict, fig_info_df, sample_abundance
 
                 ax_count += 1
 
+
+def add_labels(ax_list):
+    ax_list[1].set_title('ISLAND06')
+    ax_list[4].set_title('ISLAND10')
+    ax_list[7].set_title('ISLAND15')
+
+    ax_list[0].set_ylabel('SITE 1', fontsize='x-large')
+    ax_list[9].set_ylabel('SITE 2', fontsize='x-large')
+    ax_list[18].set_ylabel('SITE 3', fontsize='x-large')
+
+    ax_list[18].set_xlabel('porites', fontsize='medium')
+    ax_list[19].set_xlabel('pocillopora', fontsize='medium')
+    ax_list[20].set_xlabel('millepora', fontsize='medium')
+
+    ax_list[21].set_xlabel('porites', fontsize='medium')
+    ax_list[22].set_xlabel('pocillopora', fontsize='medium')
+    ax_list[23].set_xlabel('millepora', fontsize='medium')
+
+    ax_list[24].set_xlabel('porites', fontsize='medium')
+    ax_list[25].set_xlabel('pocillopora', fontsize='medium')
+    ax_list[26].set_xlabel('millepora', fontsize='medium')
 
 
 def paint_rect_to_axes_div_and_type(ax, colour_list, num_smp_in_this_subplot,  patches_list, x_tick_label_list=None,  max_num_smpls_in_subplot=10):
@@ -165,11 +196,11 @@ def paint_rect_to_axes_div_and_type(ax, colour_list, num_smp_in_this_subplot,  p
     # also format the axes.
     # make it so that the x axes is constant length
     ax.set_xlim(0 - 0.5, max_num_smpls_in_subplot - 0.5)
-    ax.set_ylim(-0.2, 1)
-    # ax.set_xticks(range(num_smp_in_this_subplot))
-    # ax.set_xticklabels(x_tick_label_list, rotation='vertical', fontsize=6)
+    ax.set_ylim(0, 1)
+    ax.set_xticks(range(num_smp_in_this_subplot))
+    ax.set_xticklabels(x_tick_label_list, rotation='vertical', fontsize=6)
 
-    remove_axes_but_allow_labels(ax)
+    remove_axes_but_allow_labels(ax, x_tick_label_list)
 
     # as well as getting rid of the top and right axis splines
     # I'd also like to restrict the bottom spine to where there are samples plotted but also
@@ -184,7 +215,12 @@ def plot_div_over_type(colour_dict, colour_list, ind, patches_list, smple_id_to_
     bottom_div = 0
     # for each sequence, create a rect patch
     # the rect will be 1 in width and centered about the ind value.
-    for seq in list(sample_abundance_df):
+    # TODO this is relatively slow and I think we can use the nonzero function of a series to speed this up
+    sample_series = sample_abundance_df.loc[smple_id_to_plot]
+    # https://pandas.pydata.org/pandas-docs/stable/generated/pandas.Series.nonzero.html
+    non_zero_series = sample_series[sample_series.nonzero()[0]]
+
+    for seq in non_zero_series.index.values.tolist():
         # class matplotlib.patches.Rectangle(xy, width, height, angle=0.0, **kwargs)
         rel_abund_div = sample_abundance_df.loc[smple_id_to_plot, seq]
         if rel_abund_div > 0:
@@ -192,6 +228,37 @@ def plot_div_over_type(colour_dict, colour_list, ind, patches_list, smple_id_to_
             # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
             colour_list.append(colour_dict[seq])
             bottom_div += rel_abund_div
+
+def plot_div_over_type_minor_div_only(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df):
+    # so it appears that there is a predominant sequence that occupies about 93% of each sample
+    # so the intragenomic diverstiy is very compressed in the top of the plots. To expand this a bit so that we can
+    # look at the intragenomic, I will leave out the predomiant sequence
+    bottom_div = 0
+    # for each sequence, create a rect patch
+    # the rect will be 1 in width and centered about the ind value.
+    # have a list that holds the seq and another that holds the abundance in order.
+    # that way we can re normalise the list
+    seq_list_in_order = []
+    relabund_list_in_order = []
+    # we will skip the first three sequences which were the most abundant
+    # TODO this is relatively slow and I think we can use the nonzero function of a series to speed this up
+    sample_series = sample_abundance_df.loc[smple_id_to_plot]
+    # https://pandas.pydata.org/pandas-docs/stable/generated/pandas.Series.nonzero.html
+    non_zero_series = sample_series[sample_series.nonzero()[0]]
+
+    for seq in non_zero_series.index.values.tolist()[1:]:
+        rel_abund_div = sample_abundance_df.loc[smple_id_to_plot, seq]
+        if rel_abund_div > 0 and rel_abund_div < 0.5:
+            seq_list_in_order.append(seq)
+            relabund_list_in_order.append(rel_abund_div)
+    # now re normalise the abundances
+    tot = sum(relabund_list_in_order)
+    for i in range(len(seq_list_in_order)):
+        normalised_seq_abund = relabund_list_in_order[i]/tot
+        patches_list.append(Rectangle((ind - 0.5, bottom_div), 1, normalised_seq_abund, color=colour_dict[seq_list_in_order[i]]))
+        # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
+        colour_list.append(colour_dict[seq_list_in_order[i]])
+        bottom_div += normalised_seq_abund
 
 def generate_colour_dict(sample_abundance_df):
     # the purpose of this is to return a seuence to colour dictionary that we will pickle out to maintain
@@ -432,34 +499,7 @@ def remove_axes_but_allow_labels(ax, x_tick_label_list=None):
         ax.set_xticks([])
     ax.set_yticks([])
 
-def setup_axes(max_n_cols, max_n_rows):
-    # https://matplotlib.org/users/gridspec.html
-    fig = plt.figure(figsize=(14, 10))
-    # the bottom row will be for the legend
-    # the second to last will just be invisible to give a space between the legend and the other plots
-    # we also want to include a gridspec plot after each of the main three. These will hold the csw and surface
-    # samples
-    # we will put in an invisible spacer so as an extra row
-    gs = plt.GridSpec(max_n_rows + 1, max_n_cols)
-    ax_list = []
-    # first make an ax for each of the main data plots
-    for row in range(max_n_rows - 1):
-        for col in range(max_n_cols):
-            ax = plt.Subplot(fig, gs[row, col])
-            ax_list.append(ax)
-            fig.add_subplot(ax)
-    # now make the ax for the space
-    blank_ax = plt.subplot(gs[max_n_rows - 1, :])
-    # make the axes invisible for the space ax
-    remove_axes_but_allow_labels(blank_ax)
-    # now split up the final row to put the legend in. One for DIVs and one for TYPEs
-    temp_grid_spec_subplot_leg = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[-1, :])
-    leg_axes = []
-    for i in range(2):
-        ax = plt.Subplot(fig, temp_grid_spec_subplot_leg[i])
-        leg_axes.append(ax)
-        fig.add_subplot(ax)
-    return ax_list, leg_axes, fig
+
 
 # For each sample I will generate a scleractinian sequences fasta and a fasta that contains only the sequencs
 # for the coral that the sample is supposed to be, i.e. porites, pocillopora or millepora
