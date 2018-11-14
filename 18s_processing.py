@@ -203,12 +203,14 @@ def MED_worker(input_q):
 
 
 def generate_fig(plot_type):
-    #todo it would be useful to have a sample order that is the same as the zooxs
+    # this is the sample order from the its2 work
+    sample_order = pickle.load(open('ordered_sample_names_from_its2_work.pickle', 'rb'))
     # to do this we'll have to read this in from the its2 work.
     # plot_type should be either 'full', 'low', or 'med'
     # full means all of the sequences including the maj
     # low means without the maj
     # med means without the maj and having been through med
+    # qc abund means plot the total abundance of sequence post qc
     info_df = generate_info_df_for_samples()
 
     fig_info_df = generate_fig_indo_df(info_df)
@@ -220,16 +222,20 @@ def generate_fig(plot_type):
     # before we move onto the actual plotting of the samples we should create an sp_output_df_div equivalent
     # for the samples. This will mean going through each of the coral sample directories and collecting relative
     # abundances. We will do this using the genus specific fastas.
-    if plot_type == 'full' or plot_type == 'low':
+    if plot_type == 'full' or plot_type == 'low' or plot_type == 'qc':
         sample_abundance_df = generate_seq_abundance_df(fig_info_df)
+        colour_dict = generate_colour_dict(sample_abundance_df=sample_abundance_df, is_med=False)
     elif plot_type == 'med':
         sample_abundance_df = create_MED_node_sample_abundance_df_for_minor_intras()
-    colour_dict = generate_colour_dict(sample_abundance_df)
+        colour_dict = generate_colour_dict(sample_abundance_df=sample_abundance_df, is_med=True)
+
 
     if plot_type == 'low':
-        plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, minor_DIV=True)
+        plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=True)
     elif plot_type == 'full' or plot_type == 'med':
-        plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, minor_DIV=False)
+        plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False)
+    elif plot_type == 'qc':
+        plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False, qc=True)
 
     add_labels(ax_list)
 
@@ -301,7 +307,7 @@ def setup_axes():
     return ax_list, fig
 
 
-def plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, minor_DIV=False):
+def plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False, qc=False):
 
     ax_count = 0
     extra_ax_count = 0
@@ -325,12 +331,23 @@ def plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, minor
                     (fig_info_df['genus'] == spp)
                     ].index.values.tolist()
 
+                # get the above sample_names_of_set in order of the sample_order list
+                ordered_sample_names_of_set = []
+                for samp_name in sample_order:
+                    if samp_name in sample_names_of_set:
+                        ordered_sample_names_of_set.append(samp_name)
+
+                # there may be some samples in the sample_names_of_set that aren't in the sample_order
+                # add these here
+                for sample_name in sample_names_of_set:
+                    if sample_name not in sample_order:
+                        ordered_sample_names_of_set.append(sample_name)
 
 
                 num_smp_in_this_subplot = len(sample_names_of_set)
                 x_tick_label_list = []
 
-                for smple_id_to_plot in sample_names_of_set:
+                for smple_id_to_plot in ordered_sample_names_of_set:
                     # General plotting
                     sys.stdout.write('\rPlotting sample: {}'.format(smple_id_to_plot))
                     x_tick_label_list.append(smple_id_to_plot)
@@ -339,6 +356,9 @@ def plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, minor
                     # PLOT DIVs
                     if minor_DIV:
                         plot_div_over_type_minor_div_only(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df)
+                    elif qc:
+                        sample_dir = fig_info_df.loc[smple_id_to_plot, 'sample_dir']
+                        plot_div_over_type_qc_abund(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_dir=sample_dir)
                     else:
                         plot_div_over_type(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df)
 
@@ -412,7 +432,7 @@ def plot_div_over_type(colour_dict, colour_list, ind, patches_list, smple_id_to_
     bottom_div = 0
     # for each sequence, create a rect patch
     # the rect will be 1 in width and centered about the ind value.
-    # TODO this is relatively slow and I think we can use the nonzero function of a series to speed this up
+
     sample_series = sample_abundance_df.loc[smple_id_to_plot]
     # https://pandas.pydata.org/pandas-docs/stable/generated/pandas.Series.nonzero.html
     non_zero_series = sample_series[sample_series.nonzero()[0]]
@@ -457,17 +477,33 @@ def plot_div_over_type_minor_div_only(colour_dict, colour_list, ind, patches_lis
         colour_list.append(colour_dict[seq_list_in_order[i]])
         bottom_div += normalised_seq_abund
 
-def generate_colour_dict(sample_abundance_df):
+
+def plot_div_over_type_qc_abund(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_dir):
+    bottom_div = 0
+    # This will plot a single bar that will be red. The bar will the the total post-qc sequences
+    # to get the abund we will just do a sum of the names file
+    with open('{}/stability.trim.contigs.good.abund.pcr.names'.format(sample_dir), 'r') as f:
+        name_file = [line.rstrip() for line in f]
+    tot_abund = sum([len(line.split('\t')[1].split(',')) for lin in name_file])
+    patches_list.append(Rectangle((ind - 0.5, 0), 1, tot_abund, color=colour_dict[seq]))
+    # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
+    colour_list.append(colour_dict[seq])
+    bottom_div += rel_abund_div
+
+def generate_colour_dict(sample_abundance_df, is_med=False):
     # the purpose of this is to return a seuence to colour dictionary that we will pickle out to maintain
     # continuity
     # make the colour list and the grey list
     # then get the sequence order from the sample_abundance_df
     # then associate to the colours until we are out of colours
     colour_dict = {}
-    colour_list = get_colour_list()
+    if is_med:
+        colour_list = get_colour_list()[3:]
+    else:
+        colour_list = get_colour_list()
     grey_palette = ['#D0CFD4', '#89888D', '#4A4A4C', '#8A8C82', '#D4D5D0', '#53544F']
     for i, seq_name in enumerate(list(sample_abundance_df)):
-        if i < len(sample_abundance_df):
+        if i < len(colour_list):
             colour_dict[seq_name] = colour_list[i]
         else:
             colour_dict[seq_name] = grey_palette[i%6]
