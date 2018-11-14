@@ -17,10 +17,189 @@ import statistics
 import subprocess
 from collections import defaultdict
 from multiprocessing import Queue, Process
+import itertools
+
+# I want to produce distance matrices for each of the coral spp.
+# I then will plot a PCOA for each of the coral species.
+# I will try to reuse as much of the SP code as possible for doing this.
+# To start with I will do a bray curtis distance as this doesn't require the sequences to be aligned
+def generate_bray_curtis_distances():
+    # Read in the minor div dataframe which should have normalised abundances in them
+    # For each sample we have a fasta that we can read in which has the normalised (to 1000) sequences
+    # For feeding into med. We can use a default dict to collect the sequences and abundances from this fairly
+    # simply.
+    # This is likely best done on for each sample outside of the pairwise comparison to save on redoing the same
+    # collection of the sequences.
+    # get info_df
+    info_df = generate_info_df_for_samples()
+
+    # get fig_info_df
+    fig_info_df = generate_fig_indo_df(info_df)
+
+    if os.path.isfile('{}/minor_div_abundance_dict.pickle'.format(os.getcwd())):
+        minor_div_abundance_dict = pickle.load(open('{}/minor_div_abundance_dict.pickle'.format(os.getcwd()), 'rb'))
+
+    else:
+
+        # this dict will have sample name as key and then a dict as value with seq to abundance values
+        # we can then work with this for the pairwise comparison
+        minor_div_abundance_dict = {}
 
 
+        for ind in fig_info_df.index.values():
+            sample_dir = fig_info_df.loc[ind, 'sample_dir']
+            with open('{}/fasta_for_med.fasta'.format(sample_dir), 'r') as f:
+                sample_fasta = [line.rstrip() for line in f]
+
+            sample_minor_abundance_dict = defaultdict(int)
+            for i in range(0, len(sample_fasta), 2):
+                sample_minor_abundance_dict[sample_fasta[i+1]] += 1
+
+            # here we have the dict popoulated for the sample
+            # we can now add this to the minor_div_abundace_dict
+            minor_div_abundance_dict[int] = sample_minor_abundance_dict
+
+        # we should now pickle out this sample_minor_abundance_dict
+        pickle.dump(minor_div_abundance_dict, open('{}/minor_div_abundance_dict.pickle'.format(os.getcwd()), 'wb'))
+
+
+    # For each of the spp.
+    for spp in ['Porites', 'Pocillopora', 'Millepora']:
+        # Create a dictionary that will hold the distance between the two samples
+        spp_distance_dict = {}
+
+
+        # Get a list of the samples that we should be working with
+        sample_names_of_spp = fig_info_df.loc[fig_info_df['genus'] == spp].index.values.tolist()
+
+        # For pairwise comparison of each of these sequences
+        for smp_one, smp_two in itertools.combinations(sample_names_of_spp, 2):
+            # Get a set of the sequences found in either one of the samples
+            smp_one_abund_dict = minor_div_abundance_dict[smp_one]
+            smp_two_abund_dict = minor_div_abundance_dict[smp_two]
+            list_of_seqs_of_pair = []
+            list_of_seqs_of_pair.extend(list(smp_one_abund_dict.keys()))
+            list_of_seqs_of_pair.extend(list(smp_two_abund_dict.keys()))
+            list_of_seqs_of_pair = list(set(list_of_seqs_of_pair))
+
+
+            # then create a list of abundances for sample one by going through the above list and checking
+            sample_one_abundance_list = []
+            for seq_name in list_of_seqs_of_pair:
+                if seq_name in smp_one_abund_dict.keys():
+                    sample_one_abundance_list.append(smp_one_abund_dict[seq_name])
+                else:
+                    sample_one_abundance_list.append(0)
+
+            # then create a list of abundances for sample two by going through the above list and checking
+            sample_two_abundance_list = []
+            for seq_name in list_of_seqs_of_pair:
+                if seq_name in smp_two_abund_dict.keys():
+                    sample_two_abundance_list.append(smp_two_abund_dict[seq_name])
+                else:
+                    sample_two_abundance_list.append(0)
+
+
+            # Do the Bray Curtis.
+            distance = braycurtis(sample_one_abundance_list, sample_two_abundance_list)
+
+            # Add the distance to the dictionary using both combinations of the sample names
+            spp_distance_dict['{}_{}'.format(smp_one, smp_two)] = distance
+            spp_distance_dict['{}_{}'.format(smp_two, smp_one)] = distance
+
+
+
+        # Generate the distance out file from this dictionary
+        # from this dict we can produce the distance file that can be passed into the generate_PCoA_coords method
+        distance_out_file = [len(sample_names_of_spp)]
+        for sample_outer in sample_names_of_spp:
+            # The list that will hold the line of distance. This line starts with the name of the sample
+            temp_sample_dist_string = [sample_outer]
+
+            for sample_inner in sample_names_of_spp:
+                if sample_outer == sample_inner:
+                    temp_sample_dist_string.append(0)
+                else:
+                    temp_sample_dist_string.append(spp_distance_dict[
+                                                      '{}_{}'.format(sample_outer, sample_inner)])
+            distance_out_file.append('\t'.join([str(distance_item) for distance_item in temp_sample_dist_string]))
+
+        # from here we can hopefully rely on the rest of the methods as they already are. The .dist file should be
+        # written out
+
+        dist_out_path = '{}/bray_curtis_within_spp_sample_distances_{}.dist'.format(os.getcwd(), spp)
+
+        with open(dist_out_path, 'w') as f:
+            for line in distance_out_file:
+                f.write('{}\n'.format(line))
+
+        # Feed this into the generate_PCoA_coords method
+        PCoA_path = generate_PCoA_coords(os.getcwd(), distance_out_file)
+    # adjust the method so that it outputs the pcoa and dist files with a species name attached to it so that we can
+    # use it for plotting
+
+
+def generate_PCoA_coords(wkd, raw_dist_file):
+    # simultaneously grab the sample names in the order of the distance matrix and put the matrix into
+    # a twoD list and then convert to a numpy array
+    temp_two_D_list = []
+    sample_names_from_dist_matrix = []
+    for line in raw_dist_file[1:]:
+        temp_elements = line.split('\t')
+        sample_names_from_dist_matrix.append(temp_elements[0].replace(' ', ''))
+        temp_two_D_list.append([float(a) for a in temp_elements[1:]])
+    uni_frac_dist_array = np.array(temp_two_D_list)
+    sys.stdout.write('\rcalculating PCoA coordinates')
+    pcoA_full_path = wkd + '/PCoA_coords.csv'
+    this = pcoa(uni_frac_dist_array)
+
+    # rename the dataframe index as the sample names
+    mapper_dict = {i: j for i, j in enumerate(sample_names_from_dist_matrix)}
+    this.samples['sample'] = sample_names_from_dist_matrix
+    renamed_dataframe = this.samples.set_index('sample')
+
+    # now add the variance explained as a final row to the renamed_dataframe
+
+    renamed_dataframe = renamed_dataframe.append(this.proportion_explained.rename('proportion_explained'))
+
+    renamed_dataframe.to_csv(pcoA_full_path, index=True, header=True, sep=',')
+    return pcoA_full_path
+
+
+def braycurtis(u, v):
+    """
+    Computes the Bray-Curtis distance between two 1-D arrays.
+
+    Bray-Curtis distance is defined as
+
+    .. math::
+
+       \\sum{|u_i-v_i|} / \\sum{|u_i+v_i|}
+
+    The Bray-Curtis distance is in the range [0, 1] if all coordinates are
+    positive, and is undefined if the inputs are of length zero.
+
+    Parameters
+    ----------
+    u : (N,) array_like
+        Input array.
+    v : (N,) array_like
+        Input array.
+
+    Returns
+    -------
+    braycurtis : double
+        The Bray-Curtis distance between 1-D arrays `u` and `v`.
+
+    """
+    u = _validate_vector(u)
+    v = _validate_vector(v, dtype=np.float64)
+    return abs(u - v).sum() / abs(u + v).sum()
 
 # This code will create MED node profiles for each of the samples, disregarding the most abundant sequence
+# NB after creating the MED sequences it was not much different to the raw sequences. This is likely becauase
+# all of the sequences were found at such low and even abundances. I think, moving forwards we should just stick with
+# working with the raw sequencs rather than the MED nodes.
 def create_MED_node_sample_abundance_df_for_minor_intras():
     # we should go sample by sample using the abundance_df and write out a fasta for the MED
     # this will be a subsample of 1000 sequences of the minor DIVs, which will be run with a dynamic
@@ -210,7 +389,8 @@ def generate_fig(plot_type):
     # full means all of the sequences including the maj
     # low means without the maj
     # med means without the maj and having been through med
-    # qc abund means plot the total abundance of sequence post qc
+    # qc_taxa_rel_abund means plot the relative abundance of the post qc taxa categories
+    # qc_absolute means plot the absolute abundance of the post-qc sequences (all tax categories)
     info_df = generate_info_df_for_samples()
 
     fig_info_df = generate_fig_indo_df(info_df)
@@ -222,20 +402,23 @@ def generate_fig(plot_type):
     # before we move onto the actual plotting of the samples we should create an sp_output_df_div equivalent
     # for the samples. This will mean going through each of the coral sample directories and collecting relative
     # abundances. We will do this using the genus specific fastas.
-    if plot_type == 'full' or plot_type == 'low' or plot_type == 'qc':
+    if plot_type == 'full' or plot_type == 'low':
         sample_abundance_df = generate_seq_abundance_df(fig_info_df)
-        colour_dict = generate_colour_dict(sample_abundance_df=sample_abundance_df, is_med=False)
+        colour_dict = generate_colour_dict(sample_abundance_df=sample_abundance_df, is_med=False, is_qc=False)
     elif plot_type == 'med':
         sample_abundance_df = create_MED_node_sample_abundance_df_for_minor_intras()
-        colour_dict = generate_colour_dict(sample_abundance_df=sample_abundance_df, is_med=True)
-
+        colour_dict = generate_colour_dict(sample_abundance_df=sample_abundance_df, is_med=True, is_qc=False)
+    elif 'qc' in plot_type:
+        sample_abundance_df = generate_post_qc_taxa_df()
+        colour_dict = generate_colour_dict(sample_abundance_df=sample_abundance_df, is_med=True, is_qc=True)
 
     if plot_type == 'low':
         plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=True)
     elif plot_type == 'full' or plot_type == 'med':
         plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False)
-    elif plot_type == 'qc':
-        plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False, qc=True)
+    elif 'qc' in plot_type:
+        plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False,
+                       qc=True, plot_type=plot_type)
 
     add_labels(ax_list)
 
@@ -248,6 +431,13 @@ def generate_fig(plot_type):
     elif plot_type == 'med':
         fig.savefig('{}/raw_seqs_abund_minor_div_only_stacked_with_med.png'.format(os.getcwd()))
         fig.savefig('{}/raw_seqs_abund_minor_div_only_stacked_with_med.svg'.format(os.getcwd()))
+    elif plot_type == 'qc_taxa_rel_abund':
+        fig.savefig('{}/post_qc_taxa_rel_abund.png'.format(os.getcwd()))
+        fig.savefig('{}/post_qc_taxa_rel_abund.svg'.format(os.getcwd()))
+    elif plot_type == 'qc_absolute':
+        fig.savefig('{}/post_qc_absolute.png'.format(os.getcwd()))
+        fig.savefig('{}/post_qc_absolute.svg'.format(os.getcwd()))
+
 
 
     return
@@ -307,10 +497,9 @@ def setup_axes():
     return ax_list, fig
 
 
-def plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False, qc=False):
+def plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False, qc=False, plot_type=None):
 
     ax_count = 0
-    extra_ax_count = 0
     for site in ['SITE01', 'SITE02', 'SITE03']:
         for location in ['ISLAND06', 'ISLAND10', 'ISLAND15']:
             for spp in ['PORITES', 'POCILLOPORA', 'MILLEPORA']:
@@ -357,19 +546,27 @@ def plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, sampl
                     if minor_DIV:
                         plot_div_over_type_minor_div_only(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df)
                     elif qc:
-                        sample_dir = fig_info_df.loc[smple_id_to_plot, 'sample_dir']
-                        plot_div_over_type_qc_abund(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_dir=sample_dir)
+                        plot_div_over_type_qc_abund(colour_dict=colour_dict, colour_list=colour_list, ind=ind,
+                                                    patches_list=patches_list, smple_id_to_plot=smple_id_to_plot,
+                                                    sample_abundance_df=sample_abundance_df, plot_type=plot_type)
                     else:
                         plot_div_over_type(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df)
 
 
                     ind += 1
-
-                paint_rect_to_axes_div_and_type(ax=ax, colour_list=colour_list,
-                                                num_smp_in_this_subplot=num_smp_in_this_subplot,
-                                                patches_list=patches_list,
-                                                x_tick_label_list=x_tick_label_list,
-                                                max_num_smpls_in_subplot=10)
+                if qc:
+                    paint_rect_to_axes_div_and_type(ax=ax, colour_list=colour_list,
+                                                    num_smp_in_this_subplot=num_smp_in_this_subplot,
+                                                    patches_list=patches_list,
+                                                    x_tick_label_list=x_tick_label_list,
+                                                    max_num_smpls_in_subplot=10, qc=True, plot_type=plot_type,
+                                                    ax_count=ax_count)
+                else:
+                    paint_rect_to_axes_div_and_type(ax=ax, colour_list=colour_list,
+                                                    num_smp_in_this_subplot=num_smp_in_this_subplot,
+                                                    patches_list=patches_list,
+                                                    x_tick_label_list=x_tick_label_list,
+                                                    max_num_smpls_in_subplot=10)
 
                 ax_count += 1
 
@@ -396,7 +593,8 @@ def add_labels(ax_list):
     ax_list[26].set_xlabel('millepora', fontsize='medium')
 
 
-def paint_rect_to_axes_div_and_type(ax, colour_list, num_smp_in_this_subplot,  patches_list, x_tick_label_list=None,  max_num_smpls_in_subplot=10):
+def paint_rect_to_axes_div_and_type(ax, colour_list, num_smp_in_this_subplot,  patches_list, x_tick_label_list=None,
+                                    max_num_smpls_in_subplot=10, qc=False, plot_type=None, ax_count=None):
     # We can try making a custom colour map
     # https://matplotlib.org/api/_as_gen/matplotlib.colors.ListedColormap.html
     this_cmap = ListedColormap(colour_list)
@@ -413,11 +611,24 @@ def paint_rect_to_axes_div_and_type(ax, colour_list, num_smp_in_this_subplot,  p
     # also format the axes.
     # make it so that the x axes is constant length
     ax.set_xlim(0 - 0.5, max_num_smpls_in_subplot - 0.5)
-    ax.set_ylim(0, 1)
+    if plot_type != 'qc_absolute':
+        ax.set_ylim(0, 1)
     ax.set_xticks(range(num_smp_in_this_subplot))
     ax.set_xticklabels(x_tick_label_list, rotation='vertical', fontsize=6)
 
-    remove_axes_but_allow_labels(ax, x_tick_label_list)
+    if plot_type == 'qc_absolute':
+        ax.set_ylim(0, 2000000)
+        ax.set_yscale('symlog')
+        if ax_count % 9 != 0:
+            remove_axes_but_allow_labels(ax, x_tick_label_list)
+        else:
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+
+
+
+    else:
+        remove_axes_but_allow_labels(ax, x_tick_label_list)
 
     # as well as getting rid of the top and right axis splines
     # I'd also like to restrict the bottom spine to where there are samples plotted but also
@@ -425,7 +636,10 @@ def paint_rect_to_axes_div_and_type(ax, colour_list, num_smp_in_this_subplot,  p
     # I think the easiest way to do this is to hack a bit by setting the x axis spines to invisible
     # and then drawing on a line at y = 0 between the smallest and largest ind (+- 0.5)
     # ax.spines['bottom'].set_visible(False)
-    ax.add_line(Line2D((0 - 0.5, num_smp_in_this_subplot - 0.5), (0, 0), linewidth=2, color='black'))
+    if plot_type != 'qc_absolute':
+        ax.add_line(Line2D((0 - 0.5, num_smp_in_this_subplot - 0.5), (0, 0), linewidth=2, color='black'))
+    elif plot_type == 'qc_absolute':
+        ax.add_line(Line2D((0 - 0.5, num_smp_in_this_subplot - 0.5), (0.1, 0.1), linewidth=2, color='black'))
 
 
 def plot_div_over_type(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df):
@@ -458,7 +672,7 @@ def plot_div_over_type_minor_div_only(colour_dict, colour_list, ind, patches_lis
     seq_list_in_order = []
     relabund_list_in_order = []
     # we will skip the first three sequences which were the most abundant
-    # TODO this is relatively slow and I think we can use the nonzero function of a series to speed this up
+    # this is relatively slow and I think we can use the nonzero function of a series to speed this up
     sample_series = sample_abundance_df.loc[smple_id_to_plot]
     # https://pandas.pydata.org/pandas-docs/stable/generated/pandas.Series.nonzero.html
     non_zero_series = sample_series[sample_series.nonzero()[0]]
@@ -478,25 +692,53 @@ def plot_div_over_type_minor_div_only(colour_dict, colour_list, ind, patches_lis
         bottom_div += normalised_seq_abund
 
 
-def plot_div_over_type_qc_abund(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_dir):
-    bottom_div = 0
-    # This will plot a single bar that will be red. The bar will the the total post-qc sequences
-    # to get the abund we will just do a sum of the names file
-    with open('{}/stability.trim.contigs.good.abund.pcr.names'.format(sample_dir), 'r') as f:
-        name_file = [line.rstrip() for line in f]
-    tot_abund = sum([len(line.split('\t')[1].split(',')) for lin in name_file])
-    patches_list.append(Rectangle((ind - 0.5, 0), 1, tot_abund, color=colour_dict[seq]))
-    # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
-    colour_list.append(colour_dict[seq])
-    bottom_div += rel_abund_div
+def plot_div_over_type_qc_abund(colour_dict, colour_list, ind, patches_list,
+                                smple_id_to_plot, sample_abundance_df, plot_type=None):
 
-def generate_colour_dict(sample_abundance_df, is_med=False):
+    bottom_div = 0
+    # for each sequence, create a rect patch
+    # the rect will be 1 in width and centered about the ind value.
+
+    sample_series = sample_abundance_df.loc[smple_id_to_plot]
+    # https://pandas.pydata.org/pandas-docs/stable/generated/pandas.Series.nonzero.html
+    non_zero_series = sample_series[sample_series.nonzero()[0]]
+
+    if plot_type == 'qc_absolute':
+        for tax_category in non_zero_series.index.values.tolist():
+            # class matplotlib.patches.Rectangle(xy, width, height, angle=0.0, **kwargs)
+            abs_abund = sample_abundance_df.loc[smple_id_to_plot, tax_category]
+            patches_list.append(Rectangle((ind - 0.5, bottom_div), 1, abs_abund, color='#808080'))
+            colour_list.append('#808080')
+            bottom_div += abs_abund
+
+    elif plot_type == 'qc_taxa_rel_abund':
+        cat_abund_list = []
+        cat_name_list = []
+        for tax_category in non_zero_series.index.values.tolist():
+            cat_abs_abund = sample_abundance_df.loc[smple_id_to_plot, tax_category]
+            cat_abund_list.append(cat_abs_abund)
+            cat_name_list.append(tax_category)
+        tot = sum(cat_abund_list)
+        rel_abunds_list = [abund/tot for abund in cat_abund_list]
+        check = sum(rel_abunds_list)
+        for i, cat_name in enumerate(cat_name_list):
+            patches_list.append(Rectangle((ind - 0.5, bottom_div), 1, rel_abunds_list[i], color=colour_dict[cat_name]))
+            colour_list.append(colour_dict[cat_name])
+            bottom_div += rel_abunds_list[i]
+
+
+
+def generate_colour_dict(sample_abundance_df, is_med=False, is_qc=False):
     # the purpose of this is to return a seuence to colour dictionary that we will pickle out to maintain
     # continuity
     # make the colour list and the grey list
     # then get the sequence order from the sample_abundance_df
     # then associate to the colours until we are out of colours
     colour_dict = {}
+    if is_qc:
+        return {'Porites':'#FFFF00', 'Pocillopora':'#87CEFA', 'Millepora':'#FF6347',
+         'other_coral':'#C0C0C0', 'Symbiodiniaceae':'#00FF00', 'other_taxa':'#696969'}
+
     if is_med:
         colour_list = get_colour_list()[3:]
     else:
@@ -724,13 +966,104 @@ def abundance_worker(input_q):
 
     return
 
-
-
 def remove_axes_but_allow_labels(ax, x_tick_label_list=None):
     ax.set_frame_on(False)
     if not x_tick_label_list:
         ax.set_xticks([])
     ax.set_yticks([])
+    ax.minorticks_off()
+
+
+def generate_post_qc_taxa_df():
+
+    if os.path.isfile('{}/tax_absolute_abund_df.pickle'.format(os.getcwd())):
+        tax_absolute_abund_df = pickle.load(open('{}/tax_absolute_abund_df.pickle'.format(os.getcwd()), 'rb'))
+    else:
+        info_df = generate_info_df_for_samples()
+
+        fig_info_df = generate_fig_indo_df(info_df)
+
+        input_q = Queue()
+
+        for ind in fig_info_df.index.values.tolist():
+            input_q.put((ind, fig_info_df.loc[ind, 'sample_dir']))
+
+        numProc = 20
+        for n in range(numProc):
+            input_q.put('STOP')
+
+        all_procs = []
+        for n in range(numProc):
+            p = Process(target=qc_abundance_worker, args=(input_q,))
+            all_procs.append(p)
+            p.start()
+
+        for p in all_procs:
+            p.join()
+
+        # at this point we have the sample_tax_category_dict items for each sample pickled out
+        # we can now go through each of the sample_dir again and use them to populate the master df
+        # which we will then return
+        tax_columns = ['Porites', 'Millepora', 'Pocillopora', 'other_coral', 'Symbiodiniaceae', 'other_taxa']
+        tax_absolute_abund_df = pd.DataFrame(columns=tax_columns)
+        for ind in fig_info_df.index.values.tolist():
+            sample_dir = fig_info_df.loc[ind, 'sample_dir']
+
+            # load the sample_tax_category_dict
+            sample_tax_category_dict = pickle.load(open('{}/sample_tax_category_dict.pickle'.format(sample_dir), 'rb'))
+
+            sample_data = []
+            for cat in tax_columns:
+                if cat in sample_tax_category_dict.keys():
+                    sample_data.append(sample_tax_category_dict[cat])
+                else:
+                    sample_data.append(0)
+            tax_absolute_abund_df = tax_absolute_abund_df.append(pd.Series(data=sample_data, index=tax_columns, name=ind))
+
+        # here we have the tax_absolute_abund_df populated
+        # now pickle it out
+        pickle.dump(tax_absolute_abund_df, open('{}/tax_absolute_abund_df.pickle'.format(os.getcwd()), 'wb'))
+    return tax_absolute_abund_df
+
+def qc_abundance_worker(input_q):
+    # the aim of this worker will be to pickle out a abund_tax_dict that will have the keys
+    # pocillopora, millepora, porites, other_host, symbiodiniacea, other_taxa
+    for sample_name, sample_dir in iter(input_q.get, 'STOP'):
+        if os.path.isfile('{}/sample_tax_category_dict.pickle'.format(sample_dir)):
+            continue
+        sys.stdout.write('\nSample {}\n'.format(sample_name))
+        # read in names file
+        with open('{}/stability.trim.contigs.good.abund.pcr.names'.format(sample_dir), 'r') as f:
+            name_file = [line.rstrip() for line in f]
+
+        # from this we can get the other taxa as any taxa that's value isn't 'Scleractinia' or 'Symbiodiniacea'
+        sample_tax_dict = pickle.load(open('{}/sample_tax_dict.pickle'.format(sample_dir), 'rb'))
+        # from this the value is the genus. So we can search for 'Porites', 'Millepora', 'Pocillopora'
+        coral_dict = pickle.load(open('{}/coral_dict.pickle'.format(sample_dir), 'rb'))
+        # each of the sequence names in this is symbiodiniaceae so we can simply count these
+        symbiodiniaceae_dict = pickle.load(open('{}/symbiodiniaceae_dict.pickle'.format(sample_dir), 'rb'))
+
+        sample_tax_category_dict = defaultdict(int)
+        # go through the name file line by line identifying what it belongs to
+        for line in name_file:
+            abundance = len(line.split('\t')[1].split(','))
+            seq_name = line.split('\t')[0]
+            if seq_name in coral_dict.keys():
+                genus_name = coral_dict[seq_name]
+                if genus_name in ['Porites', 'Millepora', 'Pocillopora']:
+                    sample_tax_category_dict[genus_name] += abundance
+                else:
+                    # then this another coral
+                    sample_tax_category_dict['other_coral'] += abundance
+            elif seq_name in symbiodiniaceae_dict.keys():
+                sample_tax_category_dict['Symbiodiniaceae'] += abundance
+            elif seq_name in sample_tax_dict.keys():
+                sample_tax_category_dict['other_taxa'] += abundance
+
+        # here we have the sample_tax_category_dict populated and we can now pickle it out
+        pickle.dump(sample_tax_category_dict, open('{}/sample_tax_category_dict.pickle'.format(sample_dir), 'wb'))
+
+
 
 
 
@@ -1421,4 +1754,4 @@ def get_colour_list():
                   "#6C8F7D", "#D7BFC2", "#3C3E6E", "#D83D66", "#2F5D9B", "#6C5E46", "#D25B88", "#5B656C", "#00B57F",
                   "#545C46", "#866097", "#365D25", "#252F99", "#00CCFF", "#674E60", "#FC009C", "#92896B"]
     return colour_list
-generate_fig(plot_type='med')
+generate_fig(plot_type='qc_absolute')
