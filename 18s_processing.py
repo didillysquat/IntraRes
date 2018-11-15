@@ -23,7 +23,245 @@ from skbio.stats.ordination import pcoa
 from mpl_toolkits.mplot3d import Axes3D
 
 # plot that will be the three species pcoas with the its2 correlations in the plot below
+def plot_pcoa_spp_18s_its2(is_three_d = False):
+    info_df = generate_info_df_for_samples()
+    fig_info_df = generate_fig_indo_df(info_df)
 
+
+    # get the pcoa df
+    pcoa_df_dict = generate_bray_curtis_distance_and_pcoa_spp()
+    # setup figure
+    spp_list = ['Porites', 'Pocillopora', 'Millepora']
+    axarr=[]
+    fig = plt.figure(figsize=(18, 10))
+
+    # here we can read in the its2 data that we are going to need
+    # read in the SymPortal relative abundance output
+
+    path_to_tab_delim_count_DIV = '/home/humebc/projects/tara/initial_its2_processing/2018-10-21_08-59-37.620726.DIVs.relative.txt'
+
+    path_to_tab_delim_count_type = '/home/humebc/projects/tara/initial_its2_processing/34_init_tara_standalone_all_samps_151018_2018-10-21_08-45-56.507454.profiles.relative.txt'
+
+    smp_id_to_smp_name_dict, smp_name_to_smp_id_dict, sp_output_df_div = process_div_df(path_to_tab_delim_count_DIV)
+
+    # now read in a process the type df too.
+
+    colour_dict_type, sp_output_df_type, sorted_type_prof_names_by_local_abund, max_n_cols_type, max_n_rows_type, num_leg_cells_type, = process_type_df(
+        path_to_tab_delim_count_type)
+
+    colour_dict_div, max_n_cols_div, max_n_rows_div, num_leg_cells_div, ordered_list_of_seqs = get_div_colour_dict_and_ordered_list_of_seqs(
+        sp_output_df_div)
+
+    # the ordered_list_of_seqs can also be used for the plotting order
+
+    # we should consider doing a plot per clade but for the time being lets start by doing a single plot that will
+    # contain all of the clades
+
+    # if we are plotting this in companion with an ITS2 type profile output then we will be passed a
+    # sample_order_list. It is very useful to have the ITS2 type profile output figure and the seq figure
+    # in the same sample order for direct comparison
+
+    ordered_sample_list = sp_output_df_type.index.values.tolist()
+    # pickle.dump(ordered_sample_list, open('ordered_sample_list_for_18s_work.pickle', 'wb'))
+    # let's reorder the columns and rows of the sp_output_df according to the sequence sample and sequence
+    # order so that plotting the data is easier
+
+    sp_output_df_div = sp_output_df_div[ordered_list_of_seqs]
+
+
+
+    # this is going to be quite a complicated setup but should be worth it
+    #
+    gs = plt.GridSpec(8, 21, figure=fig, height_ratios=[3, 0.2, 0.2, 1, 0.2, 1, 0.2, 1], width_ratios=[0.2, 0.2, 1, 0.2, 1, 0.2, 1, 0.9, 1, 0.2, 1, 0.2, 1, 0.9,1, 0.2, 1, 0.2, 1, 0.2, 0.2])
+    # we can have several axes lists so that we can populate them one by one
+    # first lets make the pcoa plot axes list
+    pcoa_axes_list = []
+    #porites ax
+    pcoa_axes_list.append(plt.subplot(gs[0, 2:7]))
+    # pocillopora ax
+    # test = plt.subplot(gs[0, 7])
+    pcoa_axes_list.append(plt.subplot(gs[0, 8:13]))
+    # millepora ax
+    pcoa_axes_list.append(plt.subplot(gs[0, 14:19]))
+
+    # now make the its2 matrix of plots
+    its2_axes_list = []
+    for start_y, start_x in [(3,2),(3,8),(3,14)]:
+        for i in range(0, 5, 2):
+            for j in range(0, 5, 2):
+                ind_x = j + start_x
+                ind_y = i + start_y
+                its2_axes_list.append(plt.subplot(gs[ind_y, ind_x]))
+
+    #todo we can add the rest of the axes e.g. for the headers later on
+
+
+    for spp in spp_list:
+
+        ax = pcoa_axes_list[spp_list.index(spp)]
+
+
+        df_of_spp = pcoa_df_dict[spp]
+
+        # x values
+        x_values = df_of_spp['PC1'].values.tolist()[:-1]
+
+        # y values
+        y_values = df_of_spp['PC2'].values.tolist()[:-1]
+
+
+
+        samples_of_spp = df_of_spp.index.values.tolist()[:-1]
+        # get list of colours and list of markers
+        # colours can designate islands
+        # TODO we will need to look up the colour according to the its2 type profile designation of the sample
+
+
+        island_colour_dict = {'ISLAND06':'#C0C0C0', 'ISLAND10':'#808080', 'ISLAND15':'#000000'}
+        island_colour_list = [island_colour_dict[fig_info_df.loc[smp, 'island']] for smp in samples_of_spp]
+
+        # shapes can designate sites
+        site_marker_dict = {'SITE01': '^', 'SITE02': 'o', 'SITE03': 's'}
+        site_marker_list = [site_marker_dict[fig_info_df.loc[smp, 'site']] for smp in samples_of_spp]
+
+
+        # plot the points
+        for x_val, y_val, col, mark in zip(x_values, y_values, island_colour_list, site_marker_list):
+            ax.scatter(x_val, y_val, c=col, marker=mark)
+
+        # add axes labels
+        ax.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp['PC1'][-1]))
+        ax.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp['PC2'][-1]))
+        # set axis title
+        ax.set_title('{}'.format(spp))
+
+
+
+
+    fig.show()
+    if not is_three_d:
+        plt.savefig('spp_pcoa_with_pc3_pc4.png'.format())
+        plt.savefig('spp_pcoa_with_pc3_pc4.svg'.format())
+
+    return
+
+def get_div_colour_dict_and_ordered_list_of_seqs(sp_output_df_div):
+    colour_palette_div = get_colour_list()
+    grey_palette_div = ['#D0CFD4', '#89888D', '#4A4A4C', '#8A8C82', '#D4D5D0', '#53544F']
+    # get a list of the sequences in order of their abundance and use this list to create the colour dict
+    # the abundances can be got by simply summing up the columns making sure to ommit the last columns
+    abundance_dict = {}
+    for col in list(sp_output_df_div):
+        abundance_dict[col] = sum(sp_output_df_div[col])
+    # get the names of the sequences sorted according to their totalled abundance
+    ordered_list_of_seqs = [x[0] for x in sorted(abundance_dict.items(), key=lambda x: x[1], reverse=True)]
+    # create the colour dictionary that will be used for plotting by assigning a colour from the colour_palette
+    # to the most abundant seqs first and after that cycle through the grey_pallette assigning colours
+    # If we aer only going to have a legend that is cols x rows as shown below, then we should only use
+    # that many colours in the plotting.
+    max_n_cols = 8
+    max_n_rows = 7
+    num_leg_cells = max_n_cols * max_n_rows
+    colour_dict_div = {}
+    for i in range(len(ordered_list_of_seqs)):
+        if i < num_leg_cells:
+            colour_dict_div[ordered_list_of_seqs[i]] = colour_palette_div[i]
+        else:
+            grey_index = i % len(grey_palette_div)
+            colour_dict_div[ordered_list_of_seqs[i]] = grey_palette_div[grey_index]
+    return colour_dict_div, max_n_cols, max_n_rows, num_leg_cells, ordered_list_of_seqs
+
+def process_type_df(path_to_tab_delim_count_type):
+    sp_output_df_type = pd.read_csv(path_to_tab_delim_count_type, sep='\t', lineterminator='\n',
+                                    skiprows=[0, 1, 2, 3, 5],
+                                    header=None)
+    # get a list of tups that are the seq names and the abundances zipped together
+    type_profile_to_abund_tup_list = [(name, int(abund)) for name, abund in
+                                      zip(sp_output_df_type.iloc[1][2:].values.tolist(),
+                                          sp_output_df_type.iloc[0][2:].values.tolist())]
+    # convert the names that are numbers into int strings rather than float strings.
+    int_temp_list = []
+    for name_abund_tup in type_profile_to_abund_tup_list:
+        try:
+            int_temp_list.append((str(int(name_abund_tup[0])), int(name_abund_tup[1])))
+        except:
+            int_temp_list.append((name_abund_tup[0], int(name_abund_tup[1])))
+    type_profile_to_abund_tup_list = int_temp_list
+    # need to drop the rows that contain the sequence accession and species descriptions
+    for i, row_name in enumerate(sp_output_df_type.iloc[:, 0]):
+        if 'Sequence accession' in row_name:
+            # then we want to drop all rows from here until the end
+            index_to_drop_from = i
+            break
+    sp_output_df_type = sp_output_df_type.iloc[:index_to_drop_from]
+    # now drop the sample name columns
+    sp_output_df_type.drop(columns=1, inplace=True)
+    # make headers
+    sp_output_df_type.columns = ['sample_id'] + [a[0] for a in type_profile_to_abund_tup_list]
+    # now drop the local abund row and promote the its2_type_prof names to columns headers.
+    sp_output_df_type.drop(index=[0, 1], inplace=True)
+    sp_output_df_type = sp_output_df_type.set_index(keys='sample_id', drop=True).astype('float')
+
+    max_n_cols = 4
+    max_n_rows = 7
+    num_leg_cells = max_n_cols * max_n_rows
+
+    # we will use the col headers as the its2 type profile order for plotting but we
+    # we should colour according to the abundance of the its2 type profiles
+    # as we don't want to run out of colours by the time we get to profiles that are very abundant.
+    # The sorted_type_prof_names_by_local_abund object has the names of the its2 type profile in order of abundance
+    # we will use the index order as the order of samples to plot
+    # create the colour dictionary that will be used for plotting by assigning a colour from the colour_palette
+    # to the most abundant seqs first and after that cycle through the grey_pallette assigning colours
+    sorted_type_prof_names_by_local_abund = [a[0] for a in
+                                             sorted(type_profile_to_abund_tup_list, key=lambda x: x[1], reverse=True)]
+
+    # we should plot sample by sample and its2 type by its2 type in the order of the output
+    # the problem with doing he convert_to_pastel is that the colours become very similar
+    # colour_palette = convert_to_pastel(get_colour_list())
+    # Rather, I will attempt to generate a quick set of colours that are pastel and have a minimum distance
+    # rule for any colours that are generated from each other.
+    # let's do this for 50 colours to start with and see how long it takes.
+    # turns out it is very quick. Easily quick enough to do dynamically.
+    # When working with pastel colours (i.e. mixing with 255,255,255 it is probably best to work with a smaller dist cutoff
+
+    colour_dict_type = pickle.load(open('/home/humebc/projects/tara/initial_its2_processing/colour_dict_type.pickle'.format(os.getcwd()), 'rb'))
+
+    return colour_dict_type, sp_output_df_type, sorted_type_prof_names_by_local_abund, max_n_cols, max_n_rows, num_leg_cells
+
+def process_div_df(path_to_tab_delim_count_DIV):
+    sp_output_df = pd.read_csv(path_to_tab_delim_count_DIV, sep='\t', lineterminator='\n', header=0, index_col=0)
+
+    # In order to be able to drop the DIV row at the end and the meta information rows, we should
+    # drop all rows that are after the DIV column. We will pass in an index value to the .drop
+    # that is called here. To do this we need to work out which index we are working with
+    index_values_as_list = sp_output_df.index.values.tolist()
+    for i in range(-1, -(len(index_values_as_list)), -1):
+        if index_values_as_list[i].startswith('DIV'):
+            # then this is the index (in negative notation) that we need to cut from
+            meta_index_to_cut_from = i
+            break
+    sp_output_df = sp_output_df.iloc[:meta_index_to_cut_from]
+
+    # create sample id to sample name dict
+    smp_id_to_smp_name_dict = {ID: '_'.join(nm.split('_')[:3]) for ID, nm in
+                               zip(sp_output_df.index.values.tolist(), sp_output_df['sample_name'].values.tolist())}
+    smp_name_to_smp_id_dict = {'_'.join(nm.split('_')[:3]): ID for ID, nm in
+                               zip(sp_output_df.index.values.tolist(), sp_output_df['sample_name'].values.tolist())}
+
+    # now lets drop the QC columns from the SP output df and also drop the clade summation columns
+    # we will be left with just clumns for each one of the sequences found in the samples
+    sp_output_df.drop(columns=['sample_name', 'noName Clade A', 'noName Clade B', 'noName Clade C', 'noName Clade D',
+                               'noName Clade E', 'noName Clade F', 'noName Clade G', 'noName Clade H',
+                               'noName Clade I', 'raw_contigs', 'post_qc_absolute_seqs', 'post_qc_unique_seqs',
+                               'post_taxa_id_absolute_symbiodinium_seqs', 'post_taxa_id_unique_symbiodinium_seqs',
+                               'post_taxa_id_absolute_non_symbiodinium_seqs',
+                               'post_taxa_id_unique_non_symbiodinium_seqs',
+                               'size_screening_violation_absolute', 'size_screening_violation_unique',
+                               'post_med_absolute', 'post_med_unique'
+                               ], inplace=True)
+    sp_output_df = sp_output_df.astype('float')
+    return smp_id_to_smp_name_dict, smp_name_to_smp_id_dict, sp_output_df
 
 # plotting of the pcoa coordinates for each species
 # I'm thinking of using shapes and colours for doing sites and islands
@@ -2090,4 +2328,4 @@ def get_colour_list():
                   "#6C8F7D", "#D7BFC2", "#3C3E6E", "#D83D66", "#2F5D9B", "#6C5E46", "#D25B88", "#5B656C", "#00B57F",
                   "#545C46", "#866097", "#365D25", "#252F99", "#00CCFF", "#674E60", "#FC009C", "#92896B"]
     return colour_list
-plot_pcoa_spp()
+plot_pcoa_spp_18s_its2()
