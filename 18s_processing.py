@@ -20,12 +20,221 @@ from multiprocessing import Queue, Process
 import itertools
 from scipy.spatial.distance import braycurtis
 from skbio.stats.ordination import pcoa
+from mpl_toolkits.mplot3d import Axes3D
+
+# plot that will be the three species pcoas with the its2 correlations in the plot below
+
+
+# plotting of the pcoa coordinates for each species
+# I'm thinking of using shapes and colours for doing sites and islands
+def plot_pcoa_spp(is_three_d = False):
+    info_df = generate_info_df_for_samples()
+    fig_info_df = generate_fig_indo_df(info_df)
+
+    # for each species
+    # get the pcoa df
+    pcoa_df_dict = generate_bray_curtis_distance_and_pcoa_spp()
+    # setup figure
+    spp_list = ['Porites', 'Pocillopora', 'Millepora']
+    axarr=[]
+    fig = plt.figure(figsize=(18, 10))
+
+    gs = plt.GridSpec(3, 6, figure=fig, width_ratios=[1, 0.2, 1, 0.2, 1, 0.5], height_ratios=[1,0.2,1])
+    for j in range(0,3,2):
+        for i in range(0, 5, 2):
+            if is_three_d:
+                if j == 1:
+                    axarr.append(fig.add_subplot(gs[j,i], projection='3d'))
+                else:
+                    axarr.append(plt.subplot(gs[j,i]))
+            else:
+                axarr.append(plt.subplot(gs[j, i]))
+
+    legend_ax = plt.subplot(gs[:, 5])
+    remove_axes_but_allow_labels(legend_ax)
+    for spp in spp_list:
+
+        ax = axarr[spp_list.index(spp)]
+        ax_second = axarr[spp_list.index(spp) + 3]
+
+        df_of_spp = pcoa_df_dict[spp]
+
+        # x values
+        x_values = df_of_spp['PC1'].values.tolist()[:-1]
+
+        # y values
+        y_values = df_of_spp['PC2'].values.tolist()[:-1]
+
+        # z values
+        z_values = df_of_spp['PC3'].values.tolist()[:-1]
+
+        # pc4 values
+        pc4_values = df_of_spp['PC4'].values.tolist()[:-1]
+
+        samples_of_spp = df_of_spp.index.values.tolist()[:-1]
+        # get list of colours and list of markers
+        # colours can designate islands
+        island_colour_dict = {'ISLAND06':'#C0C0C0', 'ISLAND10':'#808080', 'ISLAND15':'#000000'}
+        island_colour_list = [island_colour_dict[fig_info_df.loc[smp, 'island']] for smp in samples_of_spp]
+
+        # shapes can designate sites
+        site_marker_dict = {'SITE01': '^', 'SITE02': 'o', 'SITE03': 's'}
+        site_marker_list = [site_marker_dict[fig_info_df.loc[smp, 'site']] for smp in samples_of_spp]
+
+
+        # plot the points
+        for x_val, y_val, col, mark in zip(x_values, y_values, island_colour_list, site_marker_list):
+            ax.scatter(x_val, y_val, c=col, marker=mark)
+
+        # add axes labels
+        ax.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp['PC1'][-1]))
+        ax.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp['PC2'][-1]))
+        # set axis title
+        ax.set_title('{}'.format(spp))
+        if is_three_d:
+            # then lets plot the 3d equivalent below the 3d figs
+            # plot the points
+            for x_val, y_val, z_val, col, mark in zip(x_values, y_values, z_values, island_colour_list, site_marker_list):
+                ax_second.scatter(x_val, y_val, z_val, c=col, marker=mark)
+
+            # add axes labels
+            ax_second.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp['PC1'][-1]))
+            ax_second.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp['PC2'][-1]))
+            ax_second.set_zlabel('PC3; explained = {}'.format('%.3f' % df_of_spp['PC3'][-1]))
+
+
+        else:
+            # else lets just plot out the 3rd and 4th PCs below
+            # plot the points
+            for z_val, pc4_val, col, mark in zip(z_values, pc4_values, island_colour_list, site_marker_list):
+                ax_second.scatter(z_val, pc4_val, c=col, marker=mark)
+
+            # add axes labels
+            ax_second.set_xlabel('PC3; explained = {}'.format('%.3f' % df_of_spp['PC3'][-1]))
+            ax_second.set_ylabel('PC4; explained = {}'.format('%.3f' % df_of_spp['PC4'][-1]))
+
+    # here we should put together the legend axis
+    vert_leg_axis(island_colour_dict, legend_ax, site_marker_dict)
+
+    fig.show()
+    if not is_three_d:
+        plt.savefig('spp_pcoa_with_pc3_pc4.png'.format())
+        plt.savefig('spp_pcoa_with_pc3_pc4.svg'.format())
+
+    return
+
+def plot_pcoa_spp_island():
+    info_df = generate_info_df_for_samples()
+    fig_info_df = generate_fig_indo_df(info_df)
+
+    # for each species
+    # get the pcoa df
+    pcoa_df_dict = generate_bray_curtis_distance_and_pcoa_spp_and_island()
+    # setup figure
+    spp_list = ['PORITES', 'POCILLOPORA', 'MILLEPORA']
+
+    island_list = ['ISLAND06', 'ISLAND10', 'ISLAND15']
+
+    axarr = []
+
+    fig = plt.figure(figsize=(18, 10))
+
+    gs = plt.GridSpec(5, 7, figure=fig, width_ratios=[1, 0.2, 1, 0.2, 1,0.2, 0.5], height_ratios=[1, 0.2, 1, 0.2, 1])
+    for j in range(0, 5, 2):
+        for i in range(0, 5, 2):
+            axarr.append(plt.subplot(gs[j, i]))
+
+    legend_ax = plt.subplot(gs[:, 6])
+    remove_axes_but_allow_labels(legend_ax)
+    ax_count = 0
+    for spp in spp_list:
+        for island in island_list:
+
+            ax = axarr[ax_count]
+
+            df_of_spp_island = pcoa_df_dict['{}_{}'.format(spp, island)]
+
+            # x values
+            x_values = df_of_spp_island['PC1'].values.tolist()[:-1]
+
+            # y values
+            y_values = df_of_spp_island['PC2'].values.tolist()[:-1]
+
+            samples_of_spp = df_of_spp_island.index.values.tolist()[:-1]
+            # get list of colours and list of markers
+            # colours can designate islands
+            island_colour_dict = {'ISLAND06': '#C0C0C0', 'ISLAND10': '#808080', 'ISLAND15': '#000000'}
+            island_colour_list = [island_colour_dict[fig_info_df.loc[smp, 'island']] for smp in samples_of_spp]
+
+            # shapes can designate sites
+            site_marker_dict = {'SITE01': '^', 'SITE02': 'o', 'SITE03': 's'}
+            site_marker_list = [site_marker_dict[fig_info_df.loc[smp, 'site']] for smp in samples_of_spp]
+
+            # plot the points
+            for x_val, y_val, col, mark in zip(x_values, y_values, island_colour_list, site_marker_list):
+                ax.scatter(x_val, y_val, c=col, marker=mark)
+
+            # add axes labels
+            ax.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp_island['PC1'][-1]))
+            ax.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp_island['PC2'][-1]))
+            # set axis title
+            if ax_count in [0,1,2]:
+                ax.set_title('{}'.format(island) , fontsize='large', fontweight='bold')
+            if ax_count in [2,5,8]:
+                ax2 = ax.twinx()
+                ax2.yaxis.set_ticklabels([])
+                ax2.yaxis.set_ticks_position('none')
+                ax2.set_ylabel(spp, fontsize='large', fontweight='bold')
+
+            ax_count += 1
+
+    # here we should put together the legend axis
+    vert_leg_axis(island_colour_dict, legend_ax, site_marker_dict)
+
+    fig.show()
+    plt.savefig('spp_island_pcoa.png'.format())
+    plt.savefig('spp_island_pcoa.svg'.format())
+    return
+
+
+def vert_leg_axis(colour_dict, legend_ax, site_dict):
+    legend_ax.set_ylim(0, 1)
+    legend_ax.set_xlim(0, 1)
+    legend_ax.invert_yaxis()
+    number_of_icons = 6
+    island_list = ['ISLAND06', 'ISLAND10', 'ISLAND15']
+    site_list = ['SITE01', 'SITE02', 'SITE03']
+    icon_list = []
+    # first populate the island icons
+    for island in island_list:
+        icon_list.append((colour_dict[island], site_dict['SITE01']))
+    # then populate the site icons
+    for site in site_list:
+        icon_list.append((colour_dict['ISLAND06'], site_dict[site]))
+    # lets assume that the axis is divided into 20 spaces for icons
+    max_number_icons = 20
+    # the  icon position should be mid way so max_number_icons
+    # first icon position
+    first_icon_position = int((max_number_icons - number_of_icons) / 2)
+    pos_counter = first_icon_position
+    for i in range(len(icon_list)):
+        y_val_for_icon_and_text = (1 / max_number_icons) * pos_counter
+        x_val_for_icon = 0.1
+        x_val_for_text = x_val_for_icon + 0.2
+        legend_ax.scatter(x=x_val_for_icon, y=y_val_for_icon_and_text, c=icon_list[i][0], marker=icon_list[i][1], s=100)
+
+        if int(i / 3) == 0:
+            legend_ax.text(s=island_list[i], x=x_val_for_text, y=y_val_for_icon_and_text)
+        elif int(i / 3) == 1:
+            legend_ax.text(s=site_list[i % 3], x=x_val_for_text, y=y_val_for_icon_and_text)
+        pos_counter += 1
+
 
 # I want to produce distance matrices for each of the coral spp.
 # I then will plot a PCOA for each of the coral species.
 # I will try to reuse as much of the SP code as possible for doing this.
 # To start with I will do a bray curtis distance as this doesn't require the sequences to be aligned
-def generate_bray_curtis_distance_and_pcoa():
+def generate_bray_curtis_distance_and_pcoa_spp():
     # Read in the minor div dataframe which should have normalised abundances in them
     # For each sample we have a fasta that we can read in which has the normalised (to 1000) sequences
     # For feeding into med. We can use a default dict to collect the sequences and abundances from this fairly
@@ -66,13 +275,19 @@ def generate_bray_curtis_distance_and_pcoa():
 
 
     # For each of the spp.
-    spp_pcoa_df_list = []
+    spp_pcoa_df_dict = {}
     for spp in ['Porites', 'Pocillopora', 'Millepora']:
         if os.path.isfile('{}/spp_pcoa_df_{}.pickle'.format(os.getcwd(), spp)):
             spp_pcoa_df = pickle.load(open('{}/spp_pcoa_df_{}.pickle'.format(os.getcwd(), spp), 'rb'))
         else:
             # Get a list of the samples that we should be working with
             sample_names_of_spp = fig_info_df.loc[fig_info_df['genus'] == spp.upper()].index.values.tolist()
+
+            #TODO remov the two porites species form this that seem to be total outliers
+            if spp == 'Porites':
+                sample_names_of_spp.remove('CO0001674')
+                sample_names_of_spp.remove('CO0001669')
+
 
             if os.path.isfile('{}/spp_distance_dict_{}.pickle'.format(os.getcwd(), spp)):
                 spp_distance_dict = pickle.load(open('{}/spp_distance_dict_{}.pickle'.format(os.getcwd(), spp), 'rb'))
@@ -147,11 +362,145 @@ def generate_bray_curtis_distance_and_pcoa():
             # Feed this into the generate_PCoA_coords method
             spp_pcoa_df = generate_PCoA_coords(distance_out_file, spp)
             pickle.dump(spp_pcoa_df, open('{}/spp_pcoa_df_{}.pickle'.format(os.getcwd(), spp), 'wb'))
-        spp_pcoa_df_list.append(spp_pcoa_df)
-    return spp_pcoa_df_list
+        spp_pcoa_df_dict[spp] = spp_pcoa_df
+    return spp_pcoa_df_dict
 
 
+# I also want to generate a pcoa df set for each island within each species instead of with all of the islands
+# considered per species.
+# that is what we will generate here.
+def generate_bray_curtis_distance_and_pcoa_spp_and_island():
+    # Read in the minor div dataframe which should have normalised abundances in them
+    # For each sample we have a fasta that we can read in which has the normalised (to 1000) sequences
+    # For feeding into med. We can use a default dict to collect the sequences and abundances from this fairly
+    # simply.
+    # This is likely best done on for each sample outside of the pairwise comparison to save on redoing the same
+    # collection of the sequences.
+    # get info_df
+    info_df = generate_info_df_for_samples()
 
+    # get fig_info_df
+    fig_info_df = generate_fig_indo_df(info_df)
+
+    if os.path.isfile('{}/minor_div_abundance_dict.pickle'.format(os.getcwd())):
+        minor_div_abundance_dict = pickle.load(open('{}/minor_div_abundance_dict.pickle'.format(os.getcwd()), 'rb'))
+
+    else:
+
+        # this dict will have sample name as key and then a dict as value with seq to abundance values
+        # we can then work with this for the pairwise comparison
+        minor_div_abundance_dict = {}
+
+
+        for ind in fig_info_df.index.values.tolist():
+            sample_dir = fig_info_df.loc[ind, 'sample_dir']
+            with open('{}/fasta_for_med.fasta'.format(sample_dir), 'r') as f:
+                sample_fasta = [line.rstrip() for line in f]
+
+            sample_minor_abundance_dict = defaultdict(int)
+            for i in range(0, len(sample_fasta), 2):
+                sample_minor_abundance_dict[sample_fasta[i+1]] += 1
+
+            # here we have the dict popoulated for the sample
+            # we can now add this to the minor_div_abundace_dict
+            minor_div_abundance_dict[ind] = sample_minor_abundance_dict
+
+        # we should now pickle out this sample_minor_abundance_dict
+        pickle.dump(minor_div_abundance_dict, open('{}/minor_div_abundance_dict.pickle'.format(os.getcwd()), 'wb'))
+
+
+    # For each of the spp.
+    spp_island_pcoa_df_dict = {}
+    for spp in ['PORITES', 'POCILLOPORA', 'MILLEPORA']:
+        for island in ['ISLAND06', 'ISLAND10', 'ISLAND15']:
+            if os.path.isfile('{}/spp_island_pcoa_df_{}_{}.pickle'.format(os.getcwd(), spp, island)):
+                spp_island_pcoa_df = pickle.load(open('{}/spp_island_pcoa_df_{}_{}.pickle'.format(os.getcwd(), spp, island), 'rb'))
+            else:
+                # Get a list of the samples that we should be working with
+                sample_names_of_spp = fig_info_df.loc[(fig_info_df['genus'] == spp.upper()) & (fig_info_df['island'] == island.upper())].index.values.tolist()
+
+                #TODO remov the two porites species form this that seem to be total outliers
+                if spp == 'PORITES':
+                    if 'CO0001674' in sample_names_of_spp:
+                        sample_names_of_spp.remove('CO0001674')
+                        sample_names_of_spp.remove('CO0001669')
+
+
+                if os.path.isfile('{}/spp_island_distance_dict_{}_{}.pickle'.format(os.getcwd(), spp, island)):
+                    spp_island_distance_dict = pickle.load(open('{}/spp_island_distance_dict_{}_{}.pickle'.format(os.getcwd(), spp, island), 'rb'))
+
+                else:
+                    # Create a dictionary that will hold the distance between the two samples
+                    spp_island_distance_dict = {}
+
+                    # For pairwise comparison of each of these sequences
+                    for smp_one, smp_two in itertools.combinations(sample_names_of_spp, 2):
+                        print('Calculating distance for {}_{}'.format(smp_one, smp_two))
+                        # Get a set of the sequences found in either one of the samples
+                        smp_one_abund_dict = minor_div_abundance_dict[smp_one]
+                        smp_two_abund_dict = minor_div_abundance_dict[smp_two]
+                        list_of_seqs_of_pair = []
+                        list_of_seqs_of_pair.extend(list(smp_one_abund_dict.keys()))
+                        list_of_seqs_of_pair.extend(list(smp_two_abund_dict.keys()))
+                        list_of_seqs_of_pair = list(set(list_of_seqs_of_pair))
+
+
+                        # then create a list of abundances for sample one by going through the above list and checking
+                        sample_one_abundance_list = []
+                        for seq_name in list_of_seqs_of_pair:
+                            if seq_name in smp_one_abund_dict.keys():
+                                sample_one_abundance_list.append(smp_one_abund_dict[seq_name])
+                            else:
+                                sample_one_abundance_list.append(0)
+
+                        # then create a list of abundances for sample two by going through the above list and checking
+                        sample_two_abundance_list = []
+                        for seq_name in list_of_seqs_of_pair:
+                            if seq_name in smp_two_abund_dict.keys():
+                                sample_two_abundance_list.append(smp_two_abund_dict[seq_name])
+                            else:
+                                sample_two_abundance_list.append(0)
+
+
+                        # Do the Bray Curtis.
+                        distance = braycurtis(sample_one_abundance_list, sample_two_abundance_list)
+
+                        # Add the distance to the dictionary using both combinations of the sample names
+                        spp_island_distance_dict['{}_{}'.format(smp_one, smp_two)] = distance
+                        spp_island_distance_dict['{}_{}'.format(smp_two, smp_one)] = distance
+
+                    # doing this takes a bit of time so let's pickle it out
+                    pickle.dump(spp_island_distance_dict, open('{}/spp_island_distance_dict_{}_{}.pickle'.format(os.getcwd(), spp, island), 'wb'))
+
+                # Generate the distance out file from this dictionary
+                # from this dict we can produce the distance file that can be passed into the generate_PCoA_coords method
+                distance_out_file = [len(sample_names_of_spp)]
+                for sample_outer in sample_names_of_spp:
+                    # The list that will hold the line of distance. This line starts with the name of the sample
+                    temp_sample_dist_string = [sample_outer]
+
+                    for sample_inner in sample_names_of_spp:
+                        if sample_outer == sample_inner:
+                            temp_sample_dist_string.append(0)
+                        else:
+                            temp_sample_dist_string.append(spp_island_distance_dict[
+                                                              '{}_{}'.format(sample_outer, sample_inner)])
+                    distance_out_file.append('\t'.join([str(distance_item) for distance_item in temp_sample_dist_string]))
+
+                # from here we can hopefully rely on the rest of the methods as they already are. The .dist file should be
+                # written out
+
+                dist_out_path = '{}/bray_curtis_within_spp_island_sample_distances_{}_{}.dist'.format(os.getcwd(), spp, island)
+
+                with open(dist_out_path, 'w') as f:
+                    for line in distance_out_file:
+                        f.write('{}\n'.format(line))
+
+                # Feed this into the generate_PCoA_coords method
+                spp_island_pcoa_df = generate_PCoA_coords(distance_out_file, spp)
+                pickle.dump(spp_island_pcoa_df, open('{}/spp_island_pcoa_df_{}_{}.pickle'.format(os.getcwd(), spp, island), 'wb'))
+            spp_island_pcoa_df_dict['{}_{}'.format(spp, island)] = spp_island_pcoa_df
+    return spp_island_pcoa_df_dict
 
 def generate_PCoA_coords(raw_dist_file, spp):
     # simultaneously grab the sample names in the order of the distance matrix and put the matrix into
@@ -360,6 +709,8 @@ def MED_worker(input_q):
 
     return
 
+
+
 # Code for generating the figure that will let us examine what our profile look like.
 # this first go at this will not take into account any generated type profiles but rather just plot the sequences
 # in each sample.
@@ -398,30 +749,30 @@ def generate_fig(plot_type):
         colour_dict = generate_colour_dict(sample_abundance_df=sample_abundance_df, is_med=True, is_qc=True)
 
     if plot_type == 'low':
-        plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=True)
+        plot_data_axes_18s(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=True)
     elif plot_type == 'full' or plot_type == 'med':
-        plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False)
+        plot_data_axes_18s(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False)
     elif 'qc' in plot_type:
-        plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False,
+        plot_data_axes_18s(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False,
                        qc=True, plot_type=plot_type)
 
     add_labels(ax_list)
 
     if plot_type == 'full':
-        fig.savefig('{}/raw_seqs_abund_stacked.png'.format(os.getcwd()))
-        fig.savefig('{}/raw_seqs_abund_stacked.svg'.format(os.getcwd()))
+        plt.savefig('{}/raw_seqs_abund_stacked.png'.format(os.getcwd()))
+        plt.savefig('{}/raw_seqs_abund_stacked.svg'.format(os.getcwd()))
     elif plot_type == 'low':
-        fig.savefig('{}/raw_seqs_abund_minor_div_only_stacked.png'.format(os.getcwd()))
-        fig.savefig('{}/raw_seqs_abund_minor_div_only_stacked.svg'.format(os.getcwd()))
+        plt.savefig('{}/raw_seqs_abund_minor_div_only_stacked.png'.format(os.getcwd()))
+        plt.savefig('{}/raw_seqs_abund_minor_div_only_stacked.svg'.format(os.getcwd()))
     elif plot_type == 'med':
-        fig.savefig('{}/raw_seqs_abund_minor_div_only_stacked_with_med.png'.format(os.getcwd()))
-        fig.savefig('{}/raw_seqs_abund_minor_div_only_stacked_with_med.svg'.format(os.getcwd()))
+        plt.savefig('{}/raw_seqs_abund_minor_div_only_stacked_with_med.png'.format(os.getcwd()))
+        plt.savefig('{}/raw_seqs_abund_minor_div_only_stacked_with_med.svg'.format(os.getcwd()))
     elif plot_type == 'qc_taxa_rel_abund':
-        fig.savefig('{}/post_qc_taxa_rel_abund.png'.format(os.getcwd()))
-        fig.savefig('{}/post_qc_taxa_rel_abund.svg'.format(os.getcwd()))
+        plt.savefig('{}/post_qc_taxa_rel_abund.png'.format(os.getcwd()))
+        plt.savefig('{}/post_qc_taxa_rel_abund.svg'.format(os.getcwd()))
     elif plot_type == 'qc_absolute':
-        fig.savefig('{}/post_qc_absolute.png'.format(os.getcwd()))
-        fig.savefig('{}/post_qc_absolute.svg'.format(os.getcwd()))
+        plt.savefig('{}/post_qc_absolute.png'.format(os.getcwd()))
+        plt.savefig('{}/post_qc_absolute.svg'.format(os.getcwd()))
 
 
 
@@ -482,7 +833,7 @@ def setup_axes():
     return ax_list, fig
 
 
-def plot_data_axes(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False, qc=False, plot_type=None):
+def plot_data_axes_18s(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False, qc=False, plot_type=None):
 
     ax_count = 0
     for site in ['SITE01', 'SITE02', 'SITE03']:
@@ -1739,4 +2090,4 @@ def get_colour_list():
                   "#6C8F7D", "#D7BFC2", "#3C3E6E", "#D83D66", "#2F5D9B", "#6C5E46", "#D25B88", "#5B656C", "#00B57F",
                   "#545C46", "#866097", "#365D25", "#252F99", "#00CCFF", "#674E60", "#FC009C", "#92896B"]
     return colour_list
-generate_bray_curtis_distance_and_pcoa()
+plot_pcoa_spp()
