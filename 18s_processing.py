@@ -18,12 +18,14 @@ import subprocess
 from collections import defaultdict
 from multiprocessing import Queue, Process
 import itertools
+from scipy.spatial.distance import braycurtis
+from skbio.stats.ordination import pcoa
 
 # I want to produce distance matrices for each of the coral spp.
 # I then will plot a PCOA for each of the coral species.
 # I will try to reuse as much of the SP code as possible for doing this.
 # To start with I will do a bray curtis distance as this doesn't require the sequences to be aligned
-def generate_bray_curtis_distances():
+def generate_bray_curtis_distance_and_pcoa():
     # Read in the minor div dataframe which should have normalised abundances in them
     # For each sample we have a fasta that we can read in which has the normalised (to 1000) sequences
     # For feeding into med. We can use a default dict to collect the sequences and abundances from this fairly
@@ -46,7 +48,7 @@ def generate_bray_curtis_distances():
         minor_div_abundance_dict = {}
 
 
-        for ind in fig_info_df.index.values():
+        for ind in fig_info_df.index.values.tolist():
             sample_dir = fig_info_df.loc[ind, 'sample_dir']
             with open('{}/fasta_for_med.fasta'.format(sample_dir), 'r') as f:
                 sample_fasta = [line.rstrip() for line in f]
@@ -57,144 +59,127 @@ def generate_bray_curtis_distances():
 
             # here we have the dict popoulated for the sample
             # we can now add this to the minor_div_abundace_dict
-            minor_div_abundance_dict[int] = sample_minor_abundance_dict
+            minor_div_abundance_dict[ind] = sample_minor_abundance_dict
 
         # we should now pickle out this sample_minor_abundance_dict
         pickle.dump(minor_div_abundance_dict, open('{}/minor_div_abundance_dict.pickle'.format(os.getcwd()), 'wb'))
 
 
     # For each of the spp.
+    spp_pcoa_df_list = []
     for spp in ['Porites', 'Pocillopora', 'Millepora']:
-        # Create a dictionary that will hold the distance between the two samples
-        spp_distance_dict = {}
+        if os.path.isfile('{}/spp_pcoa_df_{}.pickle'.format(os.getcwd(), spp)):
+            spp_pcoa_df = pickle.load(open('{}/spp_pcoa_df_{}.pickle'.format(os.getcwd(), spp), 'rb'))
+        else:
+            # Get a list of the samples that we should be working with
+            sample_names_of_spp = fig_info_df.loc[fig_info_df['genus'] == spp.upper()].index.values.tolist()
+
+            if os.path.isfile('{}/spp_distance_dict_{}.pickle'.format(os.getcwd(), spp)):
+                spp_distance_dict = pickle.load(open('{}/spp_distance_dict_{}.pickle'.format(os.getcwd(), spp), 'rb'))
+
+            else:
+                # Create a dictionary that will hold the distance between the two samples
+                spp_distance_dict = {}
+
+                # For pairwise comparison of each of these sequences
+                for smp_one, smp_two in itertools.combinations(sample_names_of_spp, 2):
+                    print('Calculating distance for {}_{}'.format(smp_one, smp_two))
+                    # Get a set of the sequences found in either one of the samples
+                    smp_one_abund_dict = minor_div_abundance_dict[smp_one]
+                    smp_two_abund_dict = minor_div_abundance_dict[smp_two]
+                    list_of_seqs_of_pair = []
+                    list_of_seqs_of_pair.extend(list(smp_one_abund_dict.keys()))
+                    list_of_seqs_of_pair.extend(list(smp_two_abund_dict.keys()))
+                    list_of_seqs_of_pair = list(set(list_of_seqs_of_pair))
 
 
-        # Get a list of the samples that we should be working with
-        sample_names_of_spp = fig_info_df.loc[fig_info_df['genus'] == spp].index.values.tolist()
+                    # then create a list of abundances for sample one by going through the above list and checking
+                    sample_one_abundance_list = []
+                    for seq_name in list_of_seqs_of_pair:
+                        if seq_name in smp_one_abund_dict.keys():
+                            sample_one_abundance_list.append(smp_one_abund_dict[seq_name])
+                        else:
+                            sample_one_abundance_list.append(0)
 
-        # For pairwise comparison of each of these sequences
-        for smp_one, smp_two in itertools.combinations(sample_names_of_spp, 2):
-            # Get a set of the sequences found in either one of the samples
-            smp_one_abund_dict = minor_div_abundance_dict[smp_one]
-            smp_two_abund_dict = minor_div_abundance_dict[smp_two]
-            list_of_seqs_of_pair = []
-            list_of_seqs_of_pair.extend(list(smp_one_abund_dict.keys()))
-            list_of_seqs_of_pair.extend(list(smp_two_abund_dict.keys()))
-            list_of_seqs_of_pair = list(set(list_of_seqs_of_pair))
-
-
-            # then create a list of abundances for sample one by going through the above list and checking
-            sample_one_abundance_list = []
-            for seq_name in list_of_seqs_of_pair:
-                if seq_name in smp_one_abund_dict.keys():
-                    sample_one_abundance_list.append(smp_one_abund_dict[seq_name])
-                else:
-                    sample_one_abundance_list.append(0)
-
-            # then create a list of abundances for sample two by going through the above list and checking
-            sample_two_abundance_list = []
-            for seq_name in list_of_seqs_of_pair:
-                if seq_name in smp_two_abund_dict.keys():
-                    sample_two_abundance_list.append(smp_two_abund_dict[seq_name])
-                else:
-                    sample_two_abundance_list.append(0)
+                    # then create a list of abundances for sample two by going through the above list and checking
+                    sample_two_abundance_list = []
+                    for seq_name in list_of_seqs_of_pair:
+                        if seq_name in smp_two_abund_dict.keys():
+                            sample_two_abundance_list.append(smp_two_abund_dict[seq_name])
+                        else:
+                            sample_two_abundance_list.append(0)
 
 
-            # Do the Bray Curtis.
-            distance = braycurtis(sample_one_abundance_list, sample_two_abundance_list)
+                    # Do the Bray Curtis.
+                    distance = braycurtis(sample_one_abundance_list, sample_two_abundance_list)
 
-            # Add the distance to the dictionary using both combinations of the sample names
-            spp_distance_dict['{}_{}'.format(smp_one, smp_two)] = distance
-            spp_distance_dict['{}_{}'.format(smp_two, smp_one)] = distance
+                    # Add the distance to the dictionary using both combinations of the sample names
+                    spp_distance_dict['{}_{}'.format(smp_one, smp_two)] = distance
+                    spp_distance_dict['{}_{}'.format(smp_two, smp_one)] = distance
+
+                # doing this takes a bit of time so let's pickle it out
+                pickle.dump(spp_distance_dict, open('{}/spp_distance_dict_{}.pickle'.format(os.getcwd(), spp), 'wb'))
+
+            # Generate the distance out file from this dictionary
+            # from this dict we can produce the distance file that can be passed into the generate_PCoA_coords method
+            distance_out_file = [len(sample_names_of_spp)]
+            for sample_outer in sample_names_of_spp:
+                # The list that will hold the line of distance. This line starts with the name of the sample
+                temp_sample_dist_string = [sample_outer]
+
+                for sample_inner in sample_names_of_spp:
+                    if sample_outer == sample_inner:
+                        temp_sample_dist_string.append(0)
+                    else:
+                        temp_sample_dist_string.append(spp_distance_dict[
+                                                          '{}_{}'.format(sample_outer, sample_inner)])
+                distance_out_file.append('\t'.join([str(distance_item) for distance_item in temp_sample_dist_string]))
+
+            # from here we can hopefully rely on the rest of the methods as they already are. The .dist file should be
+            # written out
+
+            dist_out_path = '{}/bray_curtis_within_spp_sample_distances_{}.dist'.format(os.getcwd(), spp)
+
+            with open(dist_out_path, 'w') as f:
+                for line in distance_out_file:
+                    f.write('{}\n'.format(line))
+
+            # Feed this into the generate_PCoA_coords method
+            spp_pcoa_df = generate_PCoA_coords(distance_out_file, spp)
+            pickle.dump(spp_pcoa_df, open('{}/spp_pcoa_df_{}.pickle'.format(os.getcwd(), spp), 'wb'))
+        spp_pcoa_df_list.append(spp_pcoa_df)
+    return spp_pcoa_df_list
 
 
 
-        # Generate the distance out file from this dictionary
-        # from this dict we can produce the distance file that can be passed into the generate_PCoA_coords method
-        distance_out_file = [len(sample_names_of_spp)]
-        for sample_outer in sample_names_of_spp:
-            # The list that will hold the line of distance. This line starts with the name of the sample
-            temp_sample_dist_string = [sample_outer]
 
-            for sample_inner in sample_names_of_spp:
-                if sample_outer == sample_inner:
-                    temp_sample_dist_string.append(0)
-                else:
-                    temp_sample_dist_string.append(spp_distance_dict[
-                                                      '{}_{}'.format(sample_outer, sample_inner)])
-            distance_out_file.append('\t'.join([str(distance_item) for distance_item in temp_sample_dist_string]))
-
-        # from here we can hopefully rely on the rest of the methods as they already are. The .dist file should be
-        # written out
-
-        dist_out_path = '{}/bray_curtis_within_spp_sample_distances_{}.dist'.format(os.getcwd(), spp)
-
-        with open(dist_out_path, 'w') as f:
-            for line in distance_out_file:
-                f.write('{}\n'.format(line))
-
-        # Feed this into the generate_PCoA_coords method
-        PCoA_path = generate_PCoA_coords(os.getcwd(), distance_out_file)
-    # adjust the method so that it outputs the pcoa and dist files with a species name attached to it so that we can
-    # use it for plotting
-
-
-def generate_PCoA_coords(wkd, raw_dist_file):
+def generate_PCoA_coords(raw_dist_file, spp):
     # simultaneously grab the sample names in the order of the distance matrix and put the matrix into
     # a twoD list and then convert to a numpy array
     temp_two_D_list = []
     sample_names_from_dist_matrix = []
     for line in raw_dist_file[1:]:
         temp_elements = line.split('\t')
-        sample_names_from_dist_matrix.append(temp_elements[0].replace(' ', ''))
+        sample_names_from_dist_matrix.append(temp_elements[0])
         temp_two_D_list.append([float(a) for a in temp_elements[1:]])
     uni_frac_dist_array = np.array(temp_two_D_list)
     sys.stdout.write('\rcalculating PCoA coordinates')
-    pcoA_full_path = wkd + '/PCoA_coords.csv'
-    this = pcoa(uni_frac_dist_array)
+    pcoA_full_path = '{}/pcoa_coords_{}.csv'.format(os.getcwd(), spp)
+    pcoa_df = pcoa(uni_frac_dist_array)
 
     # rename the dataframe index as the sample names
-    mapper_dict = {i: j for i, j in enumerate(sample_names_from_dist_matrix)}
-    this.samples['sample'] = sample_names_from_dist_matrix
-    renamed_dataframe = this.samples.set_index('sample')
+    pcoa_df.samples['sample'] = sample_names_from_dist_matrix
+    renamed_dataframe = pcoa_df.samples.set_index('sample')
 
     # now add the variance explained as a final row to the renamed_dataframe
 
-    renamed_dataframe = renamed_dataframe.append(this.proportion_explained.rename('proportion_explained'))
-
-    renamed_dataframe.to_csv(pcoA_full_path, index=True, header=True, sep=',')
-    return pcoA_full_path
+    renamed_dataframe = renamed_dataframe.append(pcoa_df.proportion_explained.rename('proportion_explained'))
 
 
-def braycurtis(u, v):
-    """
-    Computes the Bray-Curtis distance between two 1-D arrays.
+    return renamed_dataframe
 
-    Bray-Curtis distance is defined as
 
-    .. math::
 
-       \\sum{|u_i-v_i|} / \\sum{|u_i+v_i|}
-
-    The Bray-Curtis distance is in the range [0, 1] if all coordinates are
-    positive, and is undefined if the inputs are of length zero.
-
-    Parameters
-    ----------
-    u : (N,) array_like
-        Input array.
-    v : (N,) array_like
-        Input array.
-
-    Returns
-    -------
-    braycurtis : double
-        The Bray-Curtis distance between 1-D arrays `u` and `v`.
-
-    """
-    u = _validate_vector(u)
-    v = _validate_vector(v, dtype=np.float64)
-    return abs(u - v).sum() / abs(u + v).sum()
 
 # This code will create MED node profiles for each of the samples, disregarding the most abundant sequence
 # NB after creating the MED sequences it was not much different to the raw sequences. This is likely becauase
@@ -1754,4 +1739,4 @@ def get_colour_list():
                   "#6C8F7D", "#D7BFC2", "#3C3E6E", "#D83D66", "#2F5D9B", "#6C5E46", "#D25B88", "#5B656C", "#00B57F",
                   "#545C46", "#866097", "#365D25", "#252F99", "#00CCFF", "#674E60", "#FC009C", "#92896B"]
     return colour_list
-generate_fig(plot_type='qc_absolute')
+generate_bray_curtis_distance_and_pcoa()
