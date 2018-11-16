@@ -32,7 +32,7 @@ def plot_pcoa_spp_18s_its2(is_three_d = False):
     pcoa_df_dict = generate_bray_curtis_distance_and_pcoa_spp()
     # setup figure
     spp_list = ['Porites', 'Pocillopora', 'Millepora']
-    axarr=[]
+
     fig = plt.figure(figsize=(18, 10))
 
     # here we can read in the its2 data that we are going to need
@@ -43,7 +43,7 @@ def plot_pcoa_spp_18s_its2(is_three_d = False):
     path_to_tab_delim_count_type = '/home/humebc/projects/tara/initial_its2_processing/34_init_tara_standalone_all_samps_151018_2018-10-21_08-45-56.507454.profiles.relative.txt'
 
     smp_id_to_smp_name_dict, smp_name_to_smp_id_dict, sp_output_df_div = process_div_df(path_to_tab_delim_count_DIV)
-
+    smp_name_to_smp_id_dict_short = {k.split('_')[0]:v for k, v in smp_name_to_smp_id_dict.items()}
     # now read in a process the type df too.
 
     colour_dict_type, sp_output_df_type, sorted_type_prof_names_by_local_abund, max_n_cols_type, max_n_rows_type, num_leg_cells_type, = process_type_df(
@@ -72,7 +72,7 @@ def plot_pcoa_spp_18s_its2(is_three_d = False):
 
     # this is going to be quite a complicated setup but should be worth it
     #
-    gs = plt.GridSpec(8, 21, figure=fig, height_ratios=[3, 0.2, 0.2, 1, 0.2, 1, 0.2, 1], width_ratios=[0.2, 0.2, 1, 0.2, 1, 0.2, 1, 0.9, 1, 0.2, 1, 0.2, 1, 0.9,1, 0.2, 1, 0.2, 1, 0.2, 0.2])
+    gs = plt.GridSpec(8, 21, figure=fig, height_ratios=[3, 0.2, 0.2, 1, 0.1, 1, 0.1, 1], width_ratios=[0.2, 0.2, 1, 0.2, 1, 0.2, 1, 1.4, 1, 0.2, 1, 0.2, 1, 1.4,1, 0.2, 1, 0.2, 1, 0.2, 0.2])
     # we can have several axes lists so that we can populate them one by one
     # first lets make the pcoa plot axes list
     pcoa_axes_list = []
@@ -95,7 +95,7 @@ def plot_pcoa_spp_18s_its2(is_three_d = False):
 
     #todo we can add the rest of the axes e.g. for the headers later on
 
-
+    # plotting of the PCOAs
     for spp in spp_list:
 
         ax = pcoa_axes_list[spp_list.index(spp)]
@@ -114,11 +114,18 @@ def plot_pcoa_spp_18s_its2(is_three_d = False):
         samples_of_spp = df_of_spp.index.values.tolist()[:-1]
         # get list of colours and list of markers
         # colours can designate islands
-        # TODO we will need to look up the colour according to the its2 type profile designation of the sample
+        # we will need to look up the colour according to the its2 type profile designation of the sample
 
-
-        island_colour_dict = {'ISLAND06':'#C0C0C0', 'ISLAND10':'#808080', 'ISLAND15':'#000000'}
-        island_colour_list = [island_colour_dict[fig_info_df.loc[smp, 'island']] for smp in samples_of_spp]
+        # here we have to see which of the sample names in samples_of_spp are available in the sp_output_df_div
+        island_colour_list = []
+        for smpl_name in samples_of_spp:
+            try:
+                max_type = sp_output_df_type.loc[smp_name_to_smp_id_dict_short[smpl_name]].idxmax()
+                island_colour_list.append(colour_dict_type[max_type])
+            except:
+                island_colour_list.append('#000000')
+        # island_colour_dict = {'ISLAND06':'#C0C0C0', 'ISLAND10':'#808080', 'ISLAND15':'#000000'}
+        # island_colour_list = [island_colour_dict[fig_info_df.loc[smp, 'island']] for smp in samples_of_spp]
 
         # shapes can designate sites
         site_marker_dict = {'SITE01': '^', 'SITE02': 'o', 'SITE03': 's'}
@@ -133,17 +140,185 @@ def plot_pcoa_spp_18s_its2(is_three_d = False):
         ax.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp['PC1'][-1]))
         ax.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp['PC2'][-1]))
         # set axis title
-        ax.set_title('{}'.format(spp))
+        ax.set_title('{}'.format(spp), fontsize='large', fontweight='bold')
 
+    add_labels_its2(its2_axes_list)
 
-
+    # here we should start to take on th plotting of the ITS2 data
+    plot_data_axes(its2_axes_list, colour_dict_div, colour_dict_type, info_df, ordered_sample_list,
+                   smp_id_to_smp_name_dict, smp_name_to_smp_id_dict_short, sp_output_df_div, sp_output_df_type)
 
     fig.show()
     if not is_three_d:
-        plt.savefig('spp_pcoa_with_pc3_pc4.png'.format())
-        plt.savefig('spp_pcoa_with_pc3_pc4.svg'.format())
+        plt.savefig('spp_pcoa_with_its2.png'.format())
+        plt.savefig('spp_pcoa_with_its2.svg'.format())
 
     return
+
+def add_labels_its2(ax_list):
+    ax_list[0].set_title('ISLAND06', fontsize='large', fontweight='bold')
+    ax_list[1].set_title('ISLAND10', fontsize='large', fontweight='bold')
+    ax_list[2].set_title('ISLAND15', fontsize='large', fontweight='bold')
+
+    ax_list[9].set_title('ISLAND06', fontsize='large', fontweight='bold')
+    ax_list[10].set_title('ISLAND10', fontsize='large', fontweight='bold')
+    ax_list[11].set_title('ISLAND15', fontsize='large', fontweight='bold')
+
+    ax_list[18].set_title('ISLAND06', fontsize='large', fontweight='bold')
+    ax_list[19].set_title('ISLAND10', fontsize='large', fontweight='bold')
+    ax_list[20].set_title('ISLAND15', fontsize='large', fontweight='bold')
+
+    ax_list[0].set_ylabel('SITE 1' , fontsize='large', fontweight='bold')
+    ax_list[3].set_ylabel('SITE 2', fontsize='large', fontweight='bold')
+    ax_list[6].set_ylabel('SITE 3', fontsize='large', fontweight='bold')
+
+
+
+def plot_data_axes(ax_list, colour_dict_div, colour_dict_type, info_df, ordered_sample_list, smp_id_to_smp_name_dict,
+                   smp_name_to_smp_id_dict_short, sp_output_df_div, sp_output_df_type):
+    ax_count = 0
+
+    for spp in ['PORITES', 'POCILLOPORA', 'MILLEPORA']:
+        for site in ['SITE01', 'SITE02', 'SITE03']:
+            for location in ['ISLAND06', 'ISLAND10', 'ISLAND15']:
+
+                ax = ax_list[ax_count]
+                patches_list = []
+                ind = 0
+                colour_list = []
+
+                # for each set of location, site and spp, we basically want to get a list of the samples
+                # that meet the set criteria, we then want to plot samples according to the ordered_sample_list
+                # order which will be in IDs. As such we will have to convert the sample_name in the info_df
+                # to a sample ID using the smp_name_to_smp_id_dict.
+
+                # get sample_names that fit the requirements
+                sample_names_of_set = info_df.loc[
+                    (info_df['location'] == location) &
+                    (info_df['site'] == site) &
+                    (info_df['spp_water'] == spp)
+                    ].index.values.tolist()
+
+                if spp == 'PORITES':
+                    if 'CO0001674' in sample_names_of_set:
+                        sample_names_of_set.remove('CO0001674')
+                        sample_names_of_set.remove('CO0001669')
+
+                # convert these to sample IDs
+                # The sample names in symportal are actually the full file names version rather than
+                # the shorter versions in the info_df. As such we should we will have to do a conversion here
+                # full_sample_names = [
+                #     '_'.join(info_df.loc[smp_name]['fastq_fwd_file_path'].split('/')[-1].split('_')[:3]) for smp_name in
+                #     sample_names_of_set]
+                try:
+                    smple_ids_of_set = []
+                    for smp_name in sample_names_of_set:
+                        smple_ids_of_set.append(smp_name_to_smp_id_dict_short[smp_name])
+                    # smple_ids_of_set = [smp_name_to_smp_id_dict[smp_name] for smp_name in full_sample_names]
+                except:
+                    apples = 'asdf'
+                # now we want to plot in the order of the ordered_sample_list
+                ordered_smple_ids_of_set = [smpl_id for smpl_id in ordered_sample_list if smpl_id in smple_ids_of_set]
+
+
+
+                num_smp_in_this_subplot = len(ordered_smple_ids_of_set)
+                x_tick_label_list = []
+
+                for smple_id_to_plot in ordered_smple_ids_of_set:
+
+
+                    # General plotting
+                    sys.stdout.write('\rPlotting sample: {}'.format(smple_id_to_plot))
+                    x_tick_label_list.append(smp_id_to_smp_name_dict[smple_id_to_plot].split('_')[0])
+                    # for each sample we will start at 0 for the y and then add the height of each bar to this
+
+                    # PLOT DIVs
+                    plot_div_over_type_its2(colour_dict_div, colour_list, ind, patches_list, smple_id_to_plot,
+                                       sp_output_df_div)
+
+                    # PLOT type
+                    plot_type_under_div_its2(colour_dict_type, colour_list, ind, patches_list, smple_id_to_plot,
+                                        sp_output_df_type)
+                    ind += 1
+
+
+                paint_rect_to_axes_div_and_type_its2(ax=ax, colour_list=colour_list,
+                                                num_smp_in_this_subplot=num_smp_in_this_subplot,
+                                                patches_list=patches_list,
+                                                x_tick_label_list=x_tick_label_list,
+                                                max_num_smpls_in_subplot=10)
+
+                ax_count += 1
+
+
+def paint_rect_to_axes_div_and_type_its2(ax, colour_list, num_smp_in_this_subplot,  patches_list, x_tick_label_list=None,  max_num_smpls_in_subplot=10):
+    # We can try making a custom colour map
+    # https://matplotlib.org/api/_as_gen/matplotlib.colors.ListedColormap.html
+    this_cmap = ListedColormap(colour_list)
+    # here we should have a list of Rectangle patches
+    # now create the PatchCollection object from the patches_list
+    patches_collection = PatchCollection(patches_list, cmap=this_cmap)
+    patches_collection.set_array(np.arange(len(patches_list)))
+    # if n_subplots is only 1 then we can refer directly to the axarr object
+    # else we will need ot reference the correct set of axes with i
+    # Add the pathces to the axes
+    ax.add_collection(patches_collection)
+    ax.autoscale_view()
+    ax.figure.canvas.draw()
+    # also format the axes.
+    # make it so that the x axes is constant length
+    ax.set_xlim(0 - 0.5, max_num_smpls_in_subplot - 0.5)
+    ax.set_ylim(-0.2, 1)
+    # ax.set_xticks(range(num_smp_in_this_subplot))
+    # ax.set_xticklabels(x_tick_label_list, rotation='vertical', fontsize=6)
+
+    remove_axes_but_allow_labels(ax)
+
+    # as well as getting rid of the top and right axis splines
+    # I'd also like to restrict the bottom spine to where there are samples plotted but also
+    # maintain the width of the samples
+    # I think the easiest way to do this is to hack a bit by setting the x axis spines to invisible
+    # and then drawing on a line at y = 0 between the smallest and largest ind (+- 0.5)
+    # ax.spines['bottom'].set_visible(False)
+    ax.add_line(Line2D((0 - 0.5, num_smp_in_this_subplot - 0.5), (0, 0), linewidth=2, color='black'))
+
+
+def plot_div_over_type_its2(colour_dict_div, colour_list, ind, patches_list, smple_id_to_plot, sp_output_df_div):
+    bottom_div = 0
+    # for each sequence, create a rect patch
+    # the rect will be 1 in width and centered about the ind value.
+    for seq in list(sp_output_df_div):
+        # class matplotlib.patches.Rectangle(xy, width, height, angle=0.0, **kwargs)
+        rel_abund_div = sp_output_df_div.loc[smple_id_to_plot, seq]
+        if rel_abund_div > 0:
+            patches_list.append(Rectangle((ind - 0.5, bottom_div), 1, rel_abund_div, color=colour_dict_div[seq]))
+            # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
+            colour_list.append(colour_dict_div[seq])
+            bottom_div += rel_abund_div
+
+def plot_type_under_div_its2(colour_dict_type, colour_list, ind, patches_list, smple_id_to_plot, sp_output_df_type):
+    # the idea of the type is to put it as a reflection below the y=0 line
+    # as such we should just want to make everything negative
+    bottom_type = 0
+    # for each sequence, create a rect patch
+    # the rect will be 1 in width and centered about the ind value.
+    # we want to plot the rects so that they add to 1. As such we want to divide
+    # each value by the total for that sample.
+    tot_for_sample = sp_output_df_type.loc[smple_id_to_plot].sum()
+    for its2_profile in list(sp_output_df_type):
+        rel_abund = sp_output_df_type.loc[smple_id_to_plot, its2_profile]
+        if rel_abund > 0:
+            depth = -0.2 * (rel_abund / tot_for_sample)
+            patches_list.append(
+                Rectangle((ind - 0.5, bottom_type), 1, depth,
+                          color=colour_dict_type[its2_profile]))
+            # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
+            colour_list.append(colour_dict_type[its2_profile])
+            bottom_type += depth
+
+def sample_id_to_sample_name(id, smpl_id_to_name_dict):
+    return(smpl_id_to_name_dict[id].split('_')[0])
 
 def get_div_colour_dict_and_ordered_list_of_seqs(sp_output_df_div):
     colour_palette_div = get_colour_list()
@@ -521,7 +696,7 @@ def generate_bray_curtis_distance_and_pcoa_spp():
             # Get a list of the samples that we should be working with
             sample_names_of_spp = fig_info_df.loc[fig_info_df['genus'] == spp.upper()].index.values.tolist()
 
-            #TODO remov the two porites species form this that seem to be total outliers
+            # remove the two porites species form this that seem to be total outliers
             if spp == 'Porites':
                 sample_names_of_spp.remove('CO0001674')
                 sample_names_of_spp.remove('CO0001669')
@@ -1124,19 +1299,19 @@ def plot_data_axes_18s(ax_list, colour_dict, fig_info_df, sample_abundance_df, s
                                                     patches_list=patches_list, smple_id_to_plot=smple_id_to_plot,
                                                     sample_abundance_df=sample_abundance_df, plot_type=plot_type)
                     else:
-                        plot_div_over_type(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df)
+                        plot_div_over_type_18s(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df)
 
 
                     ind += 1
                 if qc:
-                    paint_rect_to_axes_div_and_type(ax=ax, colour_list=colour_list,
+                    paint_rect_to_axes_div_and_type_18s(ax=ax, colour_list=colour_list,
                                                     num_smp_in_this_subplot=num_smp_in_this_subplot,
                                                     patches_list=patches_list,
                                                     x_tick_label_list=x_tick_label_list,
                                                     max_num_smpls_in_subplot=10, qc=True, plot_type=plot_type,
                                                     ax_count=ax_count)
                 else:
-                    paint_rect_to_axes_div_and_type(ax=ax, colour_list=colour_list,
+                    paint_rect_to_axes_div_and_type_18s(ax=ax, colour_list=colour_list,
                                                     num_smp_in_this_subplot=num_smp_in_this_subplot,
                                                     patches_list=patches_list,
                                                     x_tick_label_list=x_tick_label_list,
@@ -1167,7 +1342,7 @@ def add_labels(ax_list):
     ax_list[26].set_xlabel('millepora', fontsize='medium')
 
 
-def paint_rect_to_axes_div_and_type(ax, colour_list, num_smp_in_this_subplot,  patches_list, x_tick_label_list=None,
+def paint_rect_to_axes_div_and_type_18s(ax, colour_list, num_smp_in_this_subplot,  patches_list, x_tick_label_list=None,
                                     max_num_smpls_in_subplot=10, qc=False, plot_type=None, ax_count=None):
     # We can try making a custom colour map
     # https://matplotlib.org/api/_as_gen/matplotlib.colors.ListedColormap.html
@@ -1216,7 +1391,7 @@ def paint_rect_to_axes_div_and_type(ax, colour_list, num_smp_in_this_subplot,  p
         ax.add_line(Line2D((0 - 0.5, num_smp_in_this_subplot - 0.5), (0.1, 0.1), linewidth=2, color='black'))
 
 
-def plot_div_over_type(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df):
+def plot_div_over_type_18s(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df):
     bottom_div = 0
     # for each sequence, create a rect patch
     # the rect will be 1 in width and centered about the ind value.
