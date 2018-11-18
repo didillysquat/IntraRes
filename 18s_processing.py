@@ -128,12 +128,12 @@ def plot_pcoa_spp_18s_its2(is_three_d = False):
         # island_colour_list = [island_colour_dict[fig_info_df.loc[smp, 'island']] for smp in samples_of_spp]
 
         # shapes can designate sites
-        site_marker_dict = {'SITE01': '^', 'SITE02': 'o', 'SITE03': 's'}
-        site_marker_list = [site_marker_dict[fig_info_df.loc[smp, 'site']] for smp in samples_of_spp]
+        marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
+        marker_list = [marker_dict[fig_info_df.loc[smp, 'island']] for smp in samples_of_spp]
 
 
         # plot the points
-        for x_val, y_val, col, mark in zip(x_values, y_values, island_colour_list, site_marker_list):
+        for x_val, y_val, col, mark in zip(x_values, y_values, island_colour_list, marker_list):
             ax.scatter(x_val, y_val, c=col, marker=mark)
 
         # add axes labels
@@ -145,13 +145,13 @@ def plot_pcoa_spp_18s_its2(is_three_d = False):
     add_labels_its2(its2_axes_list)
 
     # here we should start to take on th plotting of the ITS2 data
-    plot_data_axes(its2_axes_list, colour_dict_div, colour_dict_type, info_df, ordered_sample_list,
+    plot_data_axes_its2(its2_axes_list, colour_dict_div, colour_dict_type, info_df, ordered_sample_list,
                    smp_id_to_smp_name_dict, smp_name_to_smp_id_dict_short, sp_output_df_div, sp_output_df_type)
 
     fig.show()
-    if not is_three_d:
-        plt.savefig('spp_pcoa_with_its2.png'.format())
-        plt.savefig('spp_pcoa_with_its2.svg'.format())
+
+    plt.savefig('spp_pcoa_with_its2.png'.format())
+    plt.savefig('spp_pcoa_with_its2.svg'.format())
 
     return
 
@@ -173,8 +173,7 @@ def add_labels_its2(ax_list):
     ax_list[6].set_ylabel('SITE 3', fontsize='large', fontweight='bold')
 
 
-
-def plot_data_axes(ax_list, colour_dict_div, colour_dict_type, info_df, ordered_sample_list, smp_id_to_smp_name_dict,
+def plot_data_axes_its2(ax_list, colour_dict_div, colour_dict_type, info_df, ordered_sample_list, smp_id_to_smp_name_dict,
                    smp_name_to_smp_id_dict_short, sp_output_df_div, sp_output_df_type):
     ax_count = 0
 
@@ -317,8 +316,6 @@ def plot_type_under_div_its2(colour_dict_type, colour_list, ind, patches_list, s
             colour_list.append(colour_dict_type[its2_profile])
             bottom_type += depth
 
-def sample_id_to_sample_name(id, smpl_id_to_name_dict):
-    return(smpl_id_to_name_dict[id].split('_')[0])
 
 def get_div_colour_dict_and_ordered_list_of_seqs(sp_output_df_div):
     colour_palette_div = get_colour_list()
