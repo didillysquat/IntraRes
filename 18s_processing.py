@@ -61,12 +61,12 @@ def prepare_sequences_for_networking():
 
         # this fasta currently contains all of the sequences including non-genus specific seqs
         # we are only interested in the genus specific seqs so lets pull these out using the
-        # scleractinian_dict.pickle file
-        scleractinian_seq_dict = pickle.load(open('{}/scleractinian_dict.pickle'.format(sample_dir), 'rb'))
+        # coral_dict.pickle file
+        coral_seq_dict = pickle.load(open('{}/coral_dict.pickle'.format(sample_dir), 'rb'))
 
         fasta_for_alignment = []
         names_for_alignment = []
-        for seq_key, coral_genus in scleractinian_seq_dict.items():
+        for seq_key, coral_genus in coral_seq_dict.items():
             if coral_genus.upper() == sample_genus.upper():
                 fasta_for_alignment.extend(['>{}'.format(seq_key), current_fasta_dict[seq_key]])
                 names_for_alignment.append(current_names_dict[seq_key])
@@ -131,7 +131,7 @@ def prepare_sequences_for_networking():
         align_fasta(input_fasta_path=input_fasta_for_alignment, output_fasta_path=output_fasta_aligned)
         # at this point we have the .names file which is coral_fasta_aligned_and_cropped.names and the aligned
         # fasta that is coral_aligned_fasta_for_networks.fasta
-        apples = 'asdf'
+    apples = 'asdf'
 
 
 def remove_gaps_from_alignment(input_fasta_alignment_path):
