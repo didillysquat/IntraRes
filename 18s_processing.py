@@ -21,8 +21,168 @@ import itertools
 from scipy.spatial.distance import braycurtis
 from skbio.stats.ordination import pcoa
 from mpl_toolkits.mplot3d import Axes3D
+from plumbum import local
+import cropping
 
-# plot that will be the three species pcoas with the its2 correlations in the plot below
+
+# I want to make splits tree networks of the 18s sequences. To do this i will need to get the seuqences in better
+# shape so that I can align them. Currently they are of very different lengths. I will go back into each of the
+# sample folders and I will align the latest fasta file and then do cropping using 90% cutoff or something.
+# this means that I will get rid of gaps at the beginning and end of the alignment if the column position has gaps for
+# 90% of the sequences.
+# On these cropped sequences I will then re-unique and then finally realign the sequences. These sequences will then
+# be ready for making networks from. It may also be a good idea to work with these sequences for all of the work we have
+# done up until now.
+def prepare_sequences_for_networking():
+    info_df = generate_info_df_for_samples()
+    fig_info_df = generate_fig_indo_df(info_df)
+
+    # for each coral sample do the alignment and cropping and re-alignment of sequences first
+    for ind in fig_info_df.index.values.tolist():
+        sample_dir = fig_info_df.loc[ind, 'sample_dir']
+
+        if os.path.isfile('{}/coral_aligned_fasta_for_networks.fasta'.format(sample_dir)) and os.path.isfile('{}/coral_fasta_aligned_and_cropped.names'.format(sample_dir)):
+            # then this sample has already been completed
+            continue
+
+        print('Processing {}'.format(ind))
+        sample_genus = fig_info_df.loc[ind, 'genus']
+
+        current_fasta_file_path = '{}/stability.trim.contigs.good.unique.abund.pcr.fasta'.format(sample_dir)
+        with open(current_fasta_file_path, 'r') as f:
+            current_fasta_file = [line.rstrip() for line in f]
+        current_fasta_dict = {current_fasta_file[i][1:].split('\t')[0] :current_fasta_file[i+1] for i in range(0, len(current_fasta_file),2)}
+
+
+        current_names_file_path = '{}/stability.trim.contigs.good.abund.pcr.names'.format(sample_dir)
+        with open(current_names_file_path, 'r') as f:
+            current_names_file = [line.rstrip() for line in f]
+        current_names_dict = {line.split('\t')[0]: line for line in current_names_file}
+
+        # this fasta currently contains all of the sequences including non-genus specific seqs
+        # we are only interested in the genus specific seqs so lets pull these out using the
+        # scleractinian_dict.pickle file
+        scleractinian_seq_dict = pickle.load(open('{}/scleractinian_dict.pickle'.format(sample_dir), 'rb'))
+
+        fasta_for_alignment = []
+        names_for_alignment = []
+        for seq_key, coral_genus in scleractinian_seq_dict.items():
+            if coral_genus.upper() == sample_genus.upper():
+                fasta_for_alignment.extend(['>{}'.format(seq_key), current_fasta_dict[seq_key]])
+                names_for_alignment.append(current_names_dict[seq_key])
+
+        # here we have a fasta file and a names file pair that are just the coral genus in question.
+        # we should now write these out and then align them. Then do the cropping
+        path_to_fasta_file_to_align = '{}/coral_fasta_to_align_and_crop.fasta'.format(sample_dir)
+        path_to_names_file_to_align = '{}/coral_names.names'.format(sample_dir)
+
+        # write out the fasta
+        with open(path_to_fasta_file_to_align, 'w') as f:
+            for line in fasta_for_alignment:
+                f.write('{}\n'.format(line))
+
+        # write out the .names file
+        with open(path_to_names_file_to_align, 'w') as f:
+            for line in names_for_alignment:
+                f.write('{}\n'.format(line))
+
+        aligned_fasta_path = '{}/coral_fasta_aligned_to_crop.fasta'.format(sample_dir)
+
+        align_fasta(input_fasta_path=path_to_fasta_file_to_align, output_fasta_path=aligned_fasta_path)
+
+        # this method takes an input path and an output path
+        path_to_fasta_cropped = '{}/coral_fasta_aligned_and_cropped.fasta'.format(sample_dir)
+
+        # at this point we have the original fasta aligned and cropped.
+        cropping.crop_fasta(input_path=aligned_fasta_path, output_path=path_to_fasta_cropped, cutoff=0.9)
+
+        # we now need to remove the gaps from the sequences else we end up with a strange '.' character in our fasta
+        # file after the seqs.unique
+        # read in the aligned fasta file
+
+        remove_gaps_from_alignment(input_fasta_alignment_path=path_to_fasta_cropped)
+
+        # now we re run mothur to do a unique on the fasta a names pair
+        mBatchFile = [
+            r'set.dir(input={})'.format(sample_dir),
+            r'set.dir(output={})'.format(sample_dir),
+            r'unique.seqs(fasta={}, name={})'.format(path_to_fasta_cropped, path_to_names_file_to_align),
+            r'summary.seqs(fasta={0}/coral_fasta_aligned_and_cropped.unique.fasta, name={0}/coral_fasta_aligned_and_cropped.names)'.format(sample_dir)
+        ]
+
+        mBatchFile_path = '{}/mBatchFile_two'.format(sample_dir)
+
+        # write out batch file
+        with open(mBatchFile_path, 'w') as f:
+            for line in mBatchFile:
+                f.write('{}\n'.format(line))
+
+        # run the mothur processing
+        # subprocess.run(['mothur', r'{0}'.format(mBatchFile_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        subprocess.run(['mothur', r'{}'.format(mBatchFile_path)])
+
+        # at this point we should have a new .fasta file and a new .names file
+        # we will then want to align these
+        # this seems to have worked really well. We are down to 149 sequences
+
+        # now we need to re-align these sequencs to get an alignment to work with
+        input_fasta_for_alignment = '{}/coral_fasta_aligned_and_cropped.unique.fasta'.format(sample_dir)
+        output_fasta_aligned= '{}/coral_aligned_fasta_for_networks.fasta'.format(sample_dir)
+        align_fasta(input_fasta_path=input_fasta_for_alignment, output_fasta_path=output_fasta_aligned)
+        # at this point we have the .names file which is coral_fasta_aligned_and_cropped.names and the aligned
+        # fasta that is coral_aligned_fasta_for_networks.fasta
+        apples = 'asdf'
+
+
+def remove_gaps_from_alignment(input_fasta_alignment_path):
+    with open(input_fasta_alignment_path, 'r') as f:
+        fasta_to_remove_gaps = [line.rstrip() for line in f]
+    fasta_without_gaps = []
+    for i in range(len(fasta_to_remove_gaps)):
+        if i % 2 == 1:
+            fasta_without_gaps.append(fasta_to_remove_gaps[i].replace('-', ''))
+        else:
+            fasta_without_gaps.append(fasta_to_remove_gaps[i])
+    # now write out the fasta without gaps
+    with open(input_fasta_alignment_path, 'w') as f:
+        for line in fasta_without_gaps:
+            f.write('{}\n'.format(line))
+
+
+def align_fasta(input_fasta_path, output_fasta_path):
+    # now perform the alignment with MAFFT
+    mafft = local["mafft-linsi"]
+    out_file = input_fasta_path.replace('.fasta', '_aligned.fasta')
+    # now run mafft including the redirect
+    (mafft['--thread', -1, input_fasta_path] > out_file)()
+    # read in the interleaved aligned fasta
+    with open(out_file, 'r') as f:
+        aligned_fasta_interleaved = [line.rstrip() for line in f]
+    # make a serial fasta from the interleaved fasta
+    aligned_fasta = convert_interleaved_to_sequencial_fasta_two(aligned_fasta_interleaved)
+    # write out the fasta to be cropped
+    with open(output_fasta_path, 'w') as f:
+        for line in aligned_fasta:
+            f.write('{}\n'.format(line))
+
+
+def convert_interleaved_to_sequencial_fasta_two(fasta_in):
+    fasta_out = []
+    for i in range(len(fasta_in)):
+        if fasta_in[i].startswith('>'):
+            if fasta_out:
+                # if the fasta is not empty then this is not the first
+                fasta_out.append(temp_seq_str)
+            #else then this is the first sequence and there is no need to add the seq.
+            temp_seq_str = ''
+            fasta_out.append(fasta_in[i])
+        else:
+            temp_seq_str = temp_seq_str + fasta_in[i]
+    #finally we need to add in the last sequence
+    fasta_out.append(temp_seq_str)
+    return fasta_out
+
+# This is the code for plotting the PCOA of 18s with the ITS2 zooxs data below
 def plot_pcoa_spp_18s_its2(is_three_d = False):
     info_df = generate_info_df_for_samples()
     fig_info_df = generate_fig_indo_df(info_df)
@@ -72,7 +232,7 @@ def plot_pcoa_spp_18s_its2(is_three_d = False):
 
     # this is going to be quite a complicated setup but should be worth it
     #
-    gs = plt.GridSpec(8, 21, figure=fig, height_ratios=[3, 0.2, 0.2, 1, 0.1, 1, 0.1, 1], width_ratios=[0.2, 0.2, 1, 0.2, 1, 0.2, 1, 1.4, 1, 0.2, 1, 0.2, 1, 1.4,1, 0.2, 1, 0.2, 1, 0.2, 0.2])
+    gs = plt.GridSpec(8, 21, figure=fig, height_ratios=[3, 0.2, 0.5, 1, 0.1, 1, 0.1, 1], width_ratios=[0.2, 0.2, 1, 0.2, 1, 0.2, 1, 1.4, 1, 0.2, 1, 0.2, 1, 1.4,1, 0.2, 1, 0.2, 1, 0.2, 0.4])
     # we can have several axes lists so that we can populate them one by one
     # first lets make the pcoa plot axes list
     pcoa_axes_list = []
@@ -148,12 +308,56 @@ def plot_pcoa_spp_18s_its2(is_three_d = False):
     plot_data_axes_its2(its2_axes_list, colour_dict_div, colour_dict_type, info_df, ordered_sample_list,
                    smp_id_to_smp_name_dict, smp_name_to_smp_id_dict_short, sp_output_df_div, sp_output_df_type)
 
+    legend_ax = plt.subplot(gs[0, 20])
+    remove_axes_but_allow_labels(legend_ax)
+    vert_leg_axis_with_its2(legend_ax, marker_dict)
+
+    # now put in a labelling for the its2 plots to show the its2 sequences, vs its2 type profiles
+    for i in range(3, 8, 2):
+        ax = plt.subplot(gs[i, 20])
+        remove_axes_but_allow_labels(ax)
+        ax.set_xlim(0,1)
+        ax.set_ylim(0,1)
+        ax.text(s='its2 seqs', x=0, y=0.5)
+        ax.text(s='its2 type profiles', x=0, y=0)
+
     fig.show()
 
     plt.savefig('spp_pcoa_with_its2.png'.format())
     plt.savefig('spp_pcoa_with_its2.svg'.format())
 
     return
+
+def vert_leg_axis_with_its2(legend_ax, marker_dict):
+    legend_ax.set_ylim(0, 1)
+    legend_ax.set_xlim(0, 1)
+    legend_ax.invert_yaxis()
+    number_of_icons = 3
+    island_list = ['ISLAND06', 'ISLAND10', 'ISLAND15']
+
+    icon_list = []
+    # first populate the island icons
+    # for site in site_list:
+    #     icon_list.append((colour_dict[site], marker_dict['ISLAND06']))
+    # then populate the site icons
+    for island in island_list:
+        icon_list.append(('#808080', marker_dict[island]))
+    # lets assume that the axis is divided into 20 spaces for icons
+    max_number_icons = 10
+    # the  icon position should be mid way so max_number_icons
+    # first icon position
+    first_icon_position = int((max_number_icons - number_of_icons) / 2)
+    pos_counter = first_icon_position
+    for i in range(len(icon_list)):
+        y_val_for_icon_and_text = (1 / max_number_icons) * pos_counter
+        x_val_for_icon = 0.4
+        x_val_for_text = x_val_for_icon + 0.4
+        legend_ax.scatter(x=x_val_for_icon, y=y_val_for_icon_and_text, c=icon_list[i][0], marker=icon_list[i][1], s=100)
+
+        if int(i / 3) == 0:
+            legend_ax.text(s=island_list[i], x=x_val_for_text, y=y_val_for_icon_and_text)
+
+        pos_counter += 1
 
 def add_labels_its2(ax_list):
     ax_list[0].set_title('ISLAND06', fontsize='large', fontweight='bold')
@@ -171,7 +375,6 @@ def add_labels_its2(ax_list):
     ax_list[0].set_ylabel('SITE 1' , fontsize='large', fontweight='bold')
     ax_list[3].set_ylabel('SITE 2', fontsize='large', fontweight='bold')
     ax_list[6].set_ylabel('SITE 3', fontsize='large', fontweight='bold')
-
 
 def plot_data_axes_its2(ax_list, colour_dict_div, colour_dict_type, info_df, ordered_sample_list, smp_id_to_smp_name_dict,
                    smp_name_to_smp_id_dict_short, sp_output_df_div, sp_output_df_type):
@@ -250,7 +453,6 @@ def plot_data_axes_its2(ax_list, colour_dict_div, colour_dict_type, info_df, ord
 
                 ax_count += 1
 
-
 def paint_rect_to_axes_div_and_type_its2(ax, colour_list, num_smp_in_this_subplot,  patches_list, x_tick_label_list=None,  max_num_smpls_in_subplot=10):
     # We can try making a custom colour map
     # https://matplotlib.org/api/_as_gen/matplotlib.colors.ListedColormap.html
@@ -281,7 +483,6 @@ def paint_rect_to_axes_div_and_type_its2(ax, colour_list, num_smp_in_this_subplo
     # and then drawing on a line at y = 0 between the smallest and largest ind (+- 0.5)
     # ax.spines['bottom'].set_visible(False)
     ax.add_line(Line2D((0 - 0.5, num_smp_in_this_subplot - 0.5), (0, 0), linewidth=2, color='black'))
-
 
 def plot_div_over_type_its2(colour_dict_div, colour_list, ind, patches_list, smple_id_to_plot, sp_output_df_div):
     bottom_div = 0
@@ -315,7 +516,6 @@ def plot_type_under_div_its2(colour_dict_type, colour_list, ind, patches_list, s
             # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
             colour_list.append(colour_dict_type[its2_profile])
             bottom_type += depth
-
 
 def get_div_colour_dict_and_ordered_list_of_seqs(sp_output_df_div):
     colour_palette_div = get_colour_list()
@@ -435,8 +635,8 @@ def process_div_df(path_to_tab_delim_count_DIV):
     sp_output_df = sp_output_df.astype('float')
     return smp_id_to_smp_name_dict, smp_name_to_smp_id_dict, sp_output_df
 
-# plotting of the pcoa coordinates for each species
-# I'm thinking of using shapes and colours for doing sites and islands
+
+# This is the code for producing the 18s pcoa with either the 3rd and 4th PC underneath or a 3d graph.
 def plot_pcoa_spp(is_three_d = False):
     info_df = generate_info_df_for_samples()
     fig_info_df = generate_fig_indo_df(info_df)
@@ -484,16 +684,17 @@ def plot_pcoa_spp(is_three_d = False):
         samples_of_spp = df_of_spp.index.values.tolist()[:-1]
         # get list of colours and list of markers
         # colours can designate islands
-        island_colour_dict = {'ISLAND06':'#C0C0C0', 'ISLAND10':'#808080', 'ISLAND15':'#000000'}
-        island_colour_list = [island_colour_dict[fig_info_df.loc[smp, 'island']] for smp in samples_of_spp]
+        colour_dict = {'SITE01': '#C0C0C0', 'SITE02': '#808080', 'SITE03': '#000000'}
+        colour_list = [colour_dict[fig_info_df.loc[smp, 'site']] for smp in samples_of_spp]
 
         # shapes can designate sites
-        site_marker_dict = {'SITE01': '^', 'SITE02': 'o', 'SITE03': 's'}
-        site_marker_list = [site_marker_dict[fig_info_df.loc[smp, 'site']] for smp in samples_of_spp]
+
+        marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
+        marker_list = [marker_dict[fig_info_df.loc[smp, 'island']] for smp in samples_of_spp]
 
 
         # plot the points
-        for x_val, y_val, col, mark in zip(x_values, y_values, island_colour_list, site_marker_list):
+        for x_val, y_val, col, mark in zip(x_values, y_values, colour_list, marker_list):
             ax.scatter(x_val, y_val, c=col, marker=mark)
 
         # add axes labels
@@ -504,7 +705,7 @@ def plot_pcoa_spp(is_three_d = False):
         if is_three_d:
             # then lets plot the 3d equivalent below the 3d figs
             # plot the points
-            for x_val, y_val, z_val, col, mark in zip(x_values, y_values, z_values, island_colour_list, site_marker_list):
+            for x_val, y_val, z_val, col, mark in zip(x_values, y_values, z_values, colour_list, marker_list):
                 ax_second.scatter(x_val, y_val, z_val, c=col, marker=mark)
 
             # add axes labels
@@ -516,7 +717,7 @@ def plot_pcoa_spp(is_three_d = False):
         else:
             # else lets just plot out the 3rd and 4th PCs below
             # plot the points
-            for z_val, pc4_val, col, mark in zip(z_values, pc4_values, island_colour_list, site_marker_list):
+            for z_val, pc4_val, col, mark in zip(z_values, pc4_values, colour_list, marker_list):
                 ax_second.scatter(z_val, pc4_val, c=col, marker=mark)
 
             # add axes labels
@@ -524,7 +725,7 @@ def plot_pcoa_spp(is_three_d = False):
             ax_second.set_ylabel('PC4; explained = {}'.format('%.3f' % df_of_spp['PC4'][-1]))
 
     # here we should put together the legend axis
-    vert_leg_axis(island_colour_dict, legend_ax, site_marker_dict)
+    vert_leg_axis(colour_dict, legend_ax, marker_dict)
 
     fig.show()
     if not is_three_d:
@@ -533,6 +734,7 @@ def plot_pcoa_spp(is_three_d = False):
 
     return
 
+# this is the code for producing a pcoa per island per species.
 def plot_pcoa_spp_island():
     info_df = generate_info_df_for_samples()
     fig_info_df = generate_fig_indo_df(info_df)
@@ -573,15 +775,16 @@ def plot_pcoa_spp_island():
             samples_of_spp = df_of_spp_island.index.values.tolist()[:-1]
             # get list of colours and list of markers
             # colours can designate islands
-            island_colour_dict = {'ISLAND06': '#C0C0C0', 'ISLAND10': '#808080', 'ISLAND15': '#000000'}
-            island_colour_list = [island_colour_dict[fig_info_df.loc[smp, 'island']] for smp in samples_of_spp]
+            colour_dict = {'SITE01': '#C0C0C0', 'SITE02': '#808080', 'SITE03': '#000000'}
+            colour_list = [colour_dict[fig_info_df.loc[smp, 'site']] for smp in samples_of_spp]
 
             # shapes can designate sites
-            site_marker_dict = {'SITE01': '^', 'SITE02': 'o', 'SITE03': 's'}
-            site_marker_list = [site_marker_dict[fig_info_df.loc[smp, 'site']] for smp in samples_of_spp]
+
+            marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
+            marker_list = [marker_dict[fig_info_df.loc[smp, 'island']] for smp in samples_of_spp]
 
             # plot the points
-            for x_val, y_val, col, mark in zip(x_values, y_values, island_colour_list, site_marker_list):
+            for x_val, y_val, col, mark in zip(x_values, y_values, colour_list, marker_list):
                 ax.scatter(x_val, y_val, c=col, marker=mark)
 
             # add axes labels
@@ -599,7 +802,7 @@ def plot_pcoa_spp_island():
             ax_count += 1
 
     # here we should put together the legend axis
-    vert_leg_axis(island_colour_dict, legend_ax, site_marker_dict)
+    vert_leg_axis(colour_dict, legend_ax, marker_dict)
 
     fig.show()
     plt.savefig('spp_island_pcoa.png'.format())
@@ -607,7 +810,7 @@ def plot_pcoa_spp_island():
     return
 
 
-def vert_leg_axis(colour_dict, legend_ax, site_dict):
+def vert_leg_axis(colour_dict, legend_ax, marker_dict):
     legend_ax.set_ylim(0, 1)
     legend_ax.set_xlim(0, 1)
     legend_ax.invert_yaxis()
@@ -616,11 +819,11 @@ def vert_leg_axis(colour_dict, legend_ax, site_dict):
     site_list = ['SITE01', 'SITE02', 'SITE03']
     icon_list = []
     # first populate the island icons
-    for island in island_list:
-        icon_list.append((colour_dict[island], site_dict['SITE01']))
-    # then populate the site icons
     for site in site_list:
-        icon_list.append((colour_dict['ISLAND06'], site_dict[site]))
+        icon_list.append((colour_dict[site], marker_dict['ISLAND06']))
+    # then populate the site icons
+    for island in island_list:
+        icon_list.append((colour_dict['SITE01'], marker_dict[island]))
     # lets assume that the axis is divided into 20 spaces for icons
     max_number_icons = 20
     # the  icon position should be mid way so max_number_icons
@@ -634,16 +837,13 @@ def vert_leg_axis(colour_dict, legend_ax, site_dict):
         legend_ax.scatter(x=x_val_for_icon, y=y_val_for_icon_and_text, c=icon_list[i][0], marker=icon_list[i][1], s=100)
 
         if int(i / 3) == 0:
-            legend_ax.text(s=island_list[i], x=x_val_for_text, y=y_val_for_icon_and_text)
+            legend_ax.text(s=site_list[i], x=x_val_for_text, y=y_val_for_icon_and_text)
         elif int(i / 3) == 1:
-            legend_ax.text(s=site_list[i % 3], x=x_val_for_text, y=y_val_for_icon_and_text)
+            legend_ax.text(s=island_list[i % 3], x=x_val_for_text, y=y_val_for_icon_and_text)
         pos_counter += 1
 
 
-# I want to produce distance matrices for each of the coral spp.
-# I then will plot a PCOA for each of the coral species.
-# I will try to reuse as much of the SP code as possible for doing this.
-# To start with I will do a bray curtis distance as this doesn't require the sequences to be aligned
+# This is code for generating PCOAs for each of the coral species.
 def generate_bray_curtis_distance_and_pcoa_spp():
     # Read in the minor div dataframe which should have normalised abundances in them
     # For each sample we have a fasta that we can read in which has the normalised (to 1000) sequences
@@ -938,8 +1138,6 @@ def generate_PCoA_coords(raw_dist_file, spp):
     return renamed_dataframe
 
 
-
-
 # This code will create MED node profiles for each of the samples, disregarding the most abundant sequence
 # NB after creating the MED sequences it was not much different to the raw sequences. This is likely becauase
 # all of the sequences were found at such low and even abundances. I think, moving forwards we should just stick with
@@ -1124,9 +1322,6 @@ def MED_worker(input_q):
 # Code for generating the figure that will let us examine what our profile look like.
 # this first go at this will not take into account any generated type profiles but rather just plot the sequences
 # in each sample.
-
-
-
 def generate_fig(plot_type):
     # this is the sample order from the its2 work
     sample_order = pickle.load(open('ordered_sample_names_from_its2_work.pickle', 'rb'))
@@ -1242,7 +1437,6 @@ def setup_axes():
             increaser += 1
     return ax_list, fig
 
-
 def plot_data_axes_18s(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False, qc=False, plot_type=None):
 
     ax_count = 0
@@ -1316,7 +1510,6 @@ def plot_data_axes_18s(ax_list, colour_dict, fig_info_df, sample_abundance_df, s
 
                 ax_count += 1
 
-
 def add_labels(ax_list):
     ax_list[1].set_title('ISLAND06')
     ax_list[4].set_title('ISLAND10')
@@ -1337,7 +1530,6 @@ def add_labels(ax_list):
     ax_list[24].set_xlabel('porites', fontsize='medium')
     ax_list[25].set_xlabel('pocillopora', fontsize='medium')
     ax_list[26].set_xlabel('millepora', fontsize='medium')
-
 
 def paint_rect_to_axes_div_and_type_18s(ax, colour_list, num_smp_in_this_subplot,  patches_list, x_tick_label_list=None,
                                     max_num_smpls_in_subplot=10, qc=False, plot_type=None, ax_count=None):
@@ -1386,7 +1578,6 @@ def paint_rect_to_axes_div_and_type_18s(ax, colour_list, num_smp_in_this_subplot
         ax.add_line(Line2D((0 - 0.5, num_smp_in_this_subplot - 0.5), (0, 0), linewidth=2, color='black'))
     elif plot_type == 'qc_absolute':
         ax.add_line(Line2D((0 - 0.5, num_smp_in_this_subplot - 0.5), (0.1, 0.1), linewidth=2, color='black'))
-
 
 def plot_div_over_type_18s(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df):
     bottom_div = 0
@@ -1437,7 +1628,6 @@ def plot_div_over_type_minor_div_only(colour_dict, colour_list, ind, patches_lis
         colour_list.append(colour_dict[seq_list_in_order[i]])
         bottom_div += normalised_seq_abund
 
-
 def plot_div_over_type_qc_abund(colour_dict, colour_list, ind, patches_list,
                                 smple_id_to_plot, sample_abundance_df, plot_type=None):
 
@@ -1472,8 +1662,6 @@ def plot_div_over_type_qc_abund(colour_dict, colour_list, ind, patches_list,
             colour_list.append(colour_dict[cat_name])
             bottom_div += rel_abunds_list[i]
 
-
-
 def generate_colour_dict(sample_abundance_df, is_med=False, is_qc=False):
     # the purpose of this is to return a seuence to colour dictionary that we will pickle out to maintain
     # continuity
@@ -1496,7 +1684,6 @@ def generate_colour_dict(sample_abundance_df, is_med=False, is_qc=False):
         else:
             colour_dict[seq_name] = grey_palette[i%6]
     return colour_dict
-
 
 def generate_seq_abundance_df(fig_info_df, numProc=20):
     # the purpose of this will be to get a dataframe that contains the sequence abundances for each of the samples
@@ -1719,7 +1906,6 @@ def remove_axes_but_allow_labels(ax, x_tick_label_list=None):
     ax.set_yticks([])
     ax.minorticks_off()
 
-
 def generate_post_qc_taxa_df():
 
     if os.path.isfile('{}/tax_absolute_abund_df.pickle'.format(os.getcwd())):
@@ -1810,9 +1996,6 @@ def qc_abundance_worker(input_q):
         pickle.dump(sample_tax_category_dict, open('{}/sample_tax_category_dict.pickle'.format(sample_dir), 'wb'))
 
 
-
-
-
 # For each sample I will generate a scleractinian sequences fasta and a fasta that contains only the sequencs
 # for the coral that the sample is supposed to be, i.e. porites, pocillopora or millepora
 # From here we should then be able to make the figures as we have before for the ITS2
@@ -1841,7 +2024,6 @@ def generate_sclerac_fastas(numProc=20):
         p.join()
 
     return
-
 
 def scleractinia_fasta_worker(input_q):
     # here we want to read in the pickled out dicts and lists
@@ -1890,8 +2072,9 @@ def scleractinia_fasta_worker(input_q):
 
     return
 
-
 def generate_summary_figure():
+    #todo I never finished this. In the end I generated a different figure for looking at the total sequencing
+    # depth for the host and zooxs and others.
     # I think it would be good to generate a summary figure the same as we did for the
     # tara data
     # I will try to recycle the code as best I can
@@ -2134,10 +2317,6 @@ def blast_worker(input_q, node_dict, name_dict):
         pickle.dump(sample_tax_dict, open('{}/sample_tax_dict.pickle'.format(sample_dir), 'wb'))
         pickle.dump(coral_dict, open('{}/coral_dict.pickle'.format(sample_dir), 'wb'))
         pickle.dump(symbiodiniaceae_dict, open('{}/symbiodiniaceae_dict.pickle'.format(sample_dir), 'wb'))
-
-
-
-
 
 
 # this function will be responsible for creating the processed name and fasta paris from the fastq files
@@ -2500,4 +2679,5 @@ def get_colour_list():
                   "#6C8F7D", "#D7BFC2", "#3C3E6E", "#D83D66", "#2F5D9B", "#6C5E46", "#D25B88", "#5B656C", "#00B57F",
                   "#545C46", "#866097", "#365D25", "#252F99", "#00CCFF", "#674E60", "#FC009C", "#92896B"]
     return colour_list
-plot_pcoa_spp_18s_its2()
+
+prepare_sequences_for_networking()
