@@ -1345,6 +1345,7 @@ def generate_fig(plot_type):
     # abundances. We will do this using the genus specific fastas.
     if plot_type == 'full' or plot_type == 'low':
         sample_abundance_df = generate_seq_abundance_df(fig_info_df)
+        # bob = sample_abundance_df.loc['CO0001677'].idxmax()
         colour_dict = generate_colour_dict(sample_abundance_df=sample_abundance_df, is_med=False, is_qc=False)
     elif plot_type == 'med':
         sample_abundance_df = create_MED_node_sample_abundance_df_for_minor_intras()
@@ -1587,8 +1588,9 @@ def plot_div_over_type_18s(colour_dict, colour_list, ind, patches_list, smple_id
     sample_series = sample_abundance_df.loc[smple_id_to_plot]
     # https://pandas.pydata.org/pandas-docs/stable/generated/pandas.Series.nonzero.html
     non_zero_series = sample_series[sample_series.nonzero()[0]]
-
-    for seq in non_zero_series.index.values.tolist():
+    non_zero_series_index_list = non_zero_series.index.values.tolist()
+    print('\nplotting {} intra seqs'.format(len(non_zero_series_index_list)))
+    for seq in non_zero_series_index_list:
         # class matplotlib.patches.Rectangle(xy, width, height, angle=0.0, **kwargs)
         rel_abund_div = sample_abundance_df.loc[smple_id_to_plot, seq]
         if rel_abund_div > 0:
@@ -2680,4 +2682,4 @@ def get_colour_list():
                   "#545C46", "#866097", "#365D25", "#252F99", "#00CCFF", "#674E60", "#FC009C", "#92896B"]
     return colour_list
 
-prepare_sequences_for_networking()
+generate_fig('full')
