@@ -1695,8 +1695,8 @@ def generate_seq_abundance_df(fig_info_df, numProc=20):
     # I think the best way to do this is to MP this and return a dictionary for each sample
     # where the key will be the sample name
     # and the vlaue will be a dictionary which will be key of actual sequences and relabund of the seq
-    # once we have all of these we can get a gloab diversity of sequence and we can also get a glbal abundance
-    # of the seuqencs so that we can plot the most abundant sequencs first.
+    # once we have all of these we can get a gloab diversity of sequence and we can also get a global abundance
+    # of the seuqences so that we can plot the most abundant sequenecs first.
 
     # this df only holds info for the coral samples so there is no need to filter
 
@@ -1868,7 +1868,6 @@ def abundance_worker(input_q):
         sample_dict = defaultdict(int)
 
         sys.stdout.write('\nSample {}\n'.format(sample_dir))
-
 
         # for each sample we will only need two files
         # we will need the name file inorder to create an abundance dict
@@ -2683,3 +2682,859 @@ def get_colour_list():
     return colour_list
 
 generate_fig('full')
+
+class EighteenSAnalysis:
+    def __init(self, plot_type):
+
+        self.root_dir = os.path.abspath(os.path.dirname(__file__))
+        self.data_root_dir = os.path.join(self.root_dir, '18S_V9_1389F_1510R')
+        # This is the directory where we will pickle out objects to create caches of them
+        self.cache_dir = os.path.join(self.root_dir, 'cache')
+        # This is the directory from which we will read in input files
+        self.input_dir = os.path.join(self.root_dir, 'input')
+        os.makedirs(self.input_dir, exist_ok=True)
+        os.makedirs(self.cache_dir,exist_ok=True)
+
+        # Two dfs that contain info for samples
+        # This one is all samples
+        self.all_samples_info_df = None
+        # This is only coral samples and is used in the plotting
+        self.coral_info_df_for_figures = None
+        self._generate_info_df_for_samples()
+
+        # This is the sample order from the its2 work
+        self.sample_order = pickle.load(open(os.path.join(self.input_dir, 'ordered_sample_names_from_its2_work.pickle'), 'rb'))
+
+    def plot_seq_stacked_bar_plots(self, plot_type):
+        seq_stacked_bar_plotter = self.SeqStackedBarPlotter(plot_type=plot_type, parent=self)
+
+        seq_stacked_bar_plotter.plot()
+
+    class SeqStackedBarPlotter():
+        """This method produced stacked bar charts. It can produce different charts depending on the plot_type.
+        'full' means all of the sequences including the maj
+        'low' means without the maj
+        'med' means without the maj and having been through med
+        'qc_taxa_rel_abund' means plot the relative abundance of the post qc taxa categories
+        'qc_absolute means' plot the absolute abundance of the post-qc sequences (all tax categories)"""
+
+        def __init__(self, parent, plot_type):
+            self.plot_type = plot_type
+            self.parent = parent
+            self.ax_list, self.fig = self._setup_axes()
+            self.sample_abundance_df = None
+            self.colour_dict = None
+
+        def _setup_axes(self):
+            # https://matplotlib.org/users/gridspec.html
+            fig = plt.figure(figsize=(14, 8))
+            # the bottom row will be for the legend
+            # the second to last will just be invisible to give a space between the legend and the other plots
+            # we also want to include a gridspec plot after each of the main three. These will hold the csw and surface
+            # samples
+            gs = plt.GridSpec(5, 3, figure=fig, height_ratios=[1, 0.3, 1, 0.3, 1])
+            # within each of the GrdiSpec subplots we will make a subplotspec which is three plots on one row
+            ax_list = []
+            grid_spec_subplot_list = []
+            increaser = 0
+            # make the main 3x3 axis
+            for row_ind in range(3):
+                for col_ind in range(3):
+                    # put in the main data 3 plots
+                    temp_grid_spec_subplot = gridspec.GridSpecFromSubplotSpec(1, 3,
+                                                                              subplot_spec=gs[
+                                                                                  row_ind + increaser, col_ind])
+                    grid_spec_subplot_list.append(temp_grid_spec_subplot)
+                    for i in range(3):
+                        # NB this might be a 2d array, lets see.
+                        ax = plt.Subplot(fig, temp_grid_spec_subplot[i])
+                        ax_list.append(ax)
+                        fig.add_subplot(ax)
+                # now put in the spacer row
+                if increaser < 2:
+                    ax_space = plt.subplot(gs[row_ind + 1 + increaser, :])
+                    remove_axes_but_allow_labels(ax_space)
+                    increaser += 1
+            return ax_list, fig
+
+
+        def plot(self):
+            if self.plot_type == 'full' or self.plot_type == 'low':
+                self.sample_abundance_df = self._generate_seq_abundance_df()
+                # bob = sample_abundance_df.loc['CO0001677'].idxmax()
+                self.colour_dict = self._generate_colour_dict(is_med=False, is_qc=False)
+            elif self.plot_type == 'med':
+                self.sample_abundance_df = create_MED_node_sample_abundance_df_for_minor_intras()
+                self.colour_dict = self._generate_colour_dict(is_med=True, is_qc=False)
+            elif 'qc' in self.plot_type:
+                self.sample_abundance_df = generate_post_qc_taxa_df()
+                self.colour_dict = self._generate_colour_dict(is_med=True, is_qc=True)
+
+            if self.plot_type == 'low':
+                self._plot_data_axes_18s(minor_DIV=True)
+            elif self.plot_type == 'full' or self.plot_type == 'med':
+                self._plot_data_axes_18s(minor_DIV=False)
+            elif 'qc' in self.plot_type:
+                self._plot_data_axes_18s(minor_DIV=False,
+                                   qc=True)
+
+            add_labels(self.ax_list)
+
+            if self.plot_type == 'full':
+                plt.savefig('{}/raw_seqs_abund_stacked.png'.format(os.getcwd()))
+                plt.savefig('{}/raw_seqs_abund_stacked.svg'.format(os.getcwd()))
+            elif self.plot_type == 'low':
+                plt.savefig('{}/raw_seqs_abund_minor_div_only_stacked.png'.format(os.getcwd()))
+                plt.savefig('{}/raw_seqs_abund_minor_div_only_stacked.svg'.format(os.getcwd()))
+            elif self.plot_type == 'med':
+                plt.savefig('{}/raw_seqs_abund_minor_div_only_stacked_with_med.png'.format(os.getcwd()))
+                plt.savefig('{}/raw_seqs_abund_minor_div_only_stacked_with_med.svg'.format(os.getcwd()))
+            elif self.plot_type == 'qc_taxa_rel_abund':
+                plt.savefig('{}/post_qc_taxa_rel_abund.png'.format(os.getcwd()))
+                plt.savefig('{}/post_qc_taxa_rel_abund.svg'.format(os.getcwd()))
+            elif self.plot_type == 'qc_absolute':
+                plt.savefig('{}/post_qc_absolute.png'.format(os.getcwd()))
+                plt.savefig('{}/post_qc_absolute.svg'.format(os.getcwd()))
+
+        def _plot_data_axes_18s(self, minor_DIV=False, qc=False):
+
+            ax_count = 0
+            for site in ['SITE01', 'SITE02', 'SITE03']:
+                for location in ['ISLAND06', 'ISLAND10', 'ISLAND15']:
+                    for spp in ['PORITES', 'POCILLOPORA', 'MILLEPORA']:
+                        ax = self.ax_list[ax_count]
+                        patches_list = []
+                        ind = 0
+                        colour_list = []
+
+                        # for each set of location, site and spp, we basically want to get a list of the samples
+                        # that meet the set criteria, we then want to plot samples according to the ordered_sample_list
+                        # order which will be in IDs. As such we will have to convert the sample_name in the info_df
+                        # to a sample ID using the smp_name_to_smp_id_dict.
+
+                        # get sample_names that fit the requirements
+                        sample_names_of_set = self.parent.coral_info_df_for_figures.loc[
+                            (self.parent.coral_info_df_for_figures['island'] == location) &
+                            (self.parent.coral_info_df_for_figures['site'] == site) &
+                            (self.parent.coral_info_df_for_figures['genus'] == spp)
+                            ].index.values.tolist()
+
+                        # get the above sample_names_of_set in order of the sample_order list
+                        ordered_sample_names_of_set = []
+                        for samp_name in self.parent.sample_order:
+                            if samp_name in sample_names_of_set:
+                                ordered_sample_names_of_set.append(samp_name)
+
+                        # there may be some samples in the sample_names_of_set that aren't in the sample_order
+                        # add these here
+                        for sample_name in sample_names_of_set:
+                            if sample_name not in self.parent.sample_order:
+                                ordered_sample_names_of_set.append(sample_name)
+
+                        num_smp_in_this_subplot = len(sample_names_of_set)
+                        x_tick_label_list = []
+
+                        for smple_id_to_plot in ordered_sample_names_of_set:
+                            # General plotting
+                            sys.stdout.write('\rPlotting sample: {}'.format(smple_id_to_plot))
+                            x_tick_label_list.append(smple_id_to_plot)
+                            # for each sample we will start at 0 for the y and then add the height of each bar to this
+
+                            # PLOT DIVs
+                            if minor_DIV:
+                                self._plot_div_over_type_minor_div_only(colour_list, ind, patches_list,
+                                                                  smple_id_to_plot)
+                            elif qc:
+                                self._plot_div_over_type_qc_abund(
+                                    colour_list=colour_list, ind=ind, patches_list=patches_list,
+                                    smple_id_to_plot=smple_id_to_plot)
+                            else:
+                                self._plot_div_over_type_18s(colour_list, ind, patches_list, smple_id_to_plot)
+
+                            ind += 1
+                        if qc:
+                            self._paint_rect_to_axes_div_and_type_18s(
+                                ax=ax, colour_list=colour_list, num_smp_in_this_subplot=num_smp_in_this_subplot,
+                                patches_list=patches_list, x_tick_label_list=x_tick_label_list,
+                                max_num_smpls_in_subplot=10, ax_count=ax_count)
+                        else:
+                            self._paint_rect_to_axes_div_and_type_18s(
+                                ax=ax, colour_list=colour_list, num_smp_in_this_subplot=num_smp_in_this_subplot,
+                                patches_list=patches_list, x_tick_label_list=x_tick_label_list,
+                                max_num_smpls_in_subplot=10)
+
+                        ax_count += 1
+
+        def _paint_rect_to_axes_div_and_type_18s(
+                self, ax, colour_list, num_smp_in_this_subplot, patches_list, x_tick_label_list=None,
+                max_num_smpls_in_subplot=10, ax_count=None):
+            # We can try making a custom colour map
+            # https://matplotlib.org/api/_as_gen/matplotlib.colors.ListedColormap.html
+            this_cmap = ListedColormap(colour_list)
+            # here we should have a list of Rectangle patches
+            # now create the PatchCollection object from the patches_list
+            patches_collection = PatchCollection(patches_list, cmap=this_cmap)
+            patches_collection.set_array(np.arange(len(patches_list)))
+            # if n_subplots is only 1 then we can refer directly to the axarr object
+            # else we will need ot reference the correct set of axes with i
+            # Add the pathces to the axes
+            ax.add_collection(patches_collection)
+            ax.autoscale_view()
+            ax.figure.canvas.draw()
+            # also format the axes.
+            # make it so that the x axes is constant length
+            ax.set_xlim(0 - 0.5, max_num_smpls_in_subplot - 0.5)
+            if self.plot_type != 'qc_absolute':
+                ax.set_ylim(0, 1)
+            ax.set_xticks(range(num_smp_in_this_subplot))
+            ax.set_xticklabels(x_tick_label_list, rotation='vertical', fontsize=6)
+
+            if self.plot_type == 'qc_absolute':
+                ax.set_ylim(0, 2000000)
+                ax.set_yscale('symlog')
+                if ax_count % 9 != 0:
+                    self._remove_axes_but_allow_labels(ax, x_tick_label_list)
+                else:
+                    ax.spines['top'].set_visible(False)
+                    ax.spines['right'].set_visible(False)
+
+            else:
+                self._remove_axes_but_allow_labels(ax, x_tick_label_list)
+
+            # as well as getting rid of the top and right axis splines
+            # I'd also like to restrict the bottom spine to where there are samples plotted but also
+            # maintain the width of the samples
+            # I think the easiest way to do this is to hack a bit by setting the x axis spines to invisible
+            # and then drawing on a line at y = 0 between the smallest and largest ind (+- 0.5)
+            # ax.spines['bottom'].set_visible(False)
+            if self.plot_type != 'qc_absolute':
+                ax.add_line(Line2D((0 - 0.5, num_smp_in_this_subplot - 0.5), (0, 0), linewidth=2, color='black'))
+            elif self.plot_type == 'qc_absolute':
+                ax.add_line(Line2D((0 - 0.5, num_smp_in_this_subplot - 0.5), (0.1, 0.1), linewidth=2, color='black'))
+
+        def _remove_axes_but_allow_labels(self, ax, x_tick_label_list=None):
+            ax.set_frame_on(False)
+            if not x_tick_label_list:
+                ax.set_xticks([])
+            ax.set_yticks([])
+            ax.minorticks_off()
+
+        def _plot_div_over_type_18s(self, colour_list, ind, patches_list, smple_id_to_plot):
+            bottom_div = 0
+            # for each sequence, create a rect patch
+            # the rect will be 1 in width and centered about the ind value.
+
+            sample_series = self.sample_abundance_df.loc[smple_id_to_plot]
+            # https://pandas.pydata.org/pandas-docs/stable/generated/pandas.Series.nonzero.html
+            non_zero_series = sample_series[sample_series.nonzero()[0]]
+            non_zero_series_index_list = non_zero_series.index.values.tolist()
+            print('\nplotting {} intra seqs'.format(len(non_zero_series_index_list)))
+            for seq in non_zero_series_index_list:
+                # class matplotlib.patches.Rectangle(xy, width, height, angle=0.0, **kwargs)
+                rel_abund_div = self.sample_abundance_df.loc[smple_id_to_plot, seq]
+                if rel_abund_div > 0:
+                    patches_list.append(Rectangle((ind - 0.5, bottom_div), 1, rel_abund_div, color=self.colour_dict[seq]))
+                    # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
+                    colour_list.append(self.colour_dict[seq])
+                    bottom_div += rel_abund_div
+
+        def _plot_div_over_type_qc_abund(self, colour_list, ind, patches_list, smple_id_to_plot):
+
+            bottom_div = 0
+            # for each sequence, create a rect patch
+            # the rect will be 1 in width and centered about the ind value.
+
+            sample_series = self.sample_abundance_df.loc[smple_id_to_plot]
+            # https://pandas.pydata.org/pandas-docs/stable/generated/pandas.Series.nonzero.html
+            non_zero_series = sample_series[sample_series.nonzero()[0]]
+
+            if self.plot_type == 'qc_absolute':
+                for tax_category in non_zero_series.index.values.tolist():
+                    # class matplotlib.patches.Rectangle(xy, width, height, angle=0.0, **kwargs)
+                    abs_abund = self.sample_abundance_df.loc[smple_id_to_plot, tax_category]
+                    patches_list.append(Rectangle((ind - 0.5, bottom_div), 1, abs_abund, color='#808080'))
+                    colour_list.append('#808080')
+                    bottom_div += abs_abund
+
+            elif self.plot_type == 'qc_taxa_rel_abund':
+                cat_abund_list = []
+                cat_name_list = []
+                for tax_category in non_zero_series.index.values.tolist():
+                    cat_abs_abund = self.sample_abundance_df.loc[smple_id_to_plot, tax_category]
+                    cat_abund_list.append(cat_abs_abund)
+                    cat_name_list.append(tax_category)
+                tot = sum(cat_abund_list)
+                rel_abunds_list = [abund / tot for abund in cat_abund_list]
+                for i, cat_name in enumerate(cat_name_list):
+                    patches_list.append(
+                        Rectangle((ind - 0.5, bottom_div), 1, rel_abunds_list[i], color=self.colour_dict[cat_name]))
+                    colour_list.append(self.colour_dict[cat_name])
+                    bottom_div += rel_abunds_list[i]
+
+        def _plot_div_over_type_minor_div_only(self, colour_list, ind, patches_list, smple_id_to_plot):
+            # so it appears that there is a predominant sequence that occupies about 93% of each sample
+            # so the intragenomic diverstiy is very compressed in the top of the plots. To expand this a bit so that we can
+            # look at the intragenomic, I will leave out the predomiant sequence
+            bottom_div = 0
+            # for each sequence, create a rect patch
+            # the rect will be 1 in width and centered about the ind value.
+            # have a list that holds the seq and another that holds the abundance in order.
+            # that way we can re normalise the list
+            seq_list_in_order = []
+            relabund_list_in_order = []
+            # we will skip the first three sequences which were the most abundant
+            # this is relatively slow and I think we can use the nonzero function of a series to speed this up
+            sample_series = self.sample_abundance_df.loc[smple_id_to_plot]
+            # https://pandas.pydata.org/pandas-docs/stable/generated/pandas.Series.nonzero.html
+            non_zero_series = sample_series[sample_series.nonzero()[0]]
+
+            for seq in non_zero_series.index.values.tolist()[1:]:
+                rel_abund_div = self.sample_abundance_df.loc[smple_id_to_plot, seq]
+                if rel_abund_div > 0 and rel_abund_div < 0.5:
+                    seq_list_in_order.append(seq)
+                    relabund_list_in_order.append(rel_abund_div)
+            # now re normalise the abundances
+            tot = sum(relabund_list_in_order)
+            for i in range(len(seq_list_in_order)):
+                normalised_seq_abund = relabund_list_in_order[i] / tot
+                patches_list.append(Rectangle((ind - 0.5, bottom_div), 1, normalised_seq_abund,
+                                              color=self.colour_dict[seq_list_in_order[i]]))
+                # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
+                colour_list.append(self.colour_dict[seq_list_in_order[i]])
+                bottom_div += normalised_seq_abund
+
+        def _generate_colour_dict(self, is_med=False, is_qc=False):
+            # the purpose of this is to return a seuence to colour dictionary that we will pickle out to maintain
+            # continuity
+            # make the colour list and the grey list
+            # then get the sequence order from the sample_abundance_df
+            # then associate to the colours until we are out of colours
+            colour_dict = {}
+            if is_qc:
+                return {'Porites': '#FFFF00', 'Pocillopora': '#87CEFA', 'Millepora': '#FF6347',
+                        'other_coral': '#C0C0C0', 'Symbiodiniaceae': '#00FF00', 'other_taxa': '#696969'}
+
+            if is_med:
+                colour_list = get_colour_list()[3:]
+            else:
+                colour_list = get_colour_list()
+            grey_palette = ['#D0CFD4', '#89888D', '#4A4A4C', '#8A8C82', '#D4D5D0', '#53544F']
+            for i, seq_name in enumerate(list(self.sample_abundance_df)):
+                if i < len(colour_list):
+                    colour_dict[seq_name] = colour_list[i]
+                else:
+                    colour_dict[seq_name] = grey_palette[i % 6]
+            return colour_dict
+
+        def _generate_seq_abundance_df(self, numProc=20):
+            """ The purpose of this will be to get a dataframe that contains the
+            sequence abundances for each of the samples
+            This will only contain the sequence abundances for the coral sequences
+            so it will not contain any zooxs seqs or non-scleractinian seqs.
+
+            One thing that will be tough is getting a global collection of the sequences that have been found.
+            I think the best way to do this is to MP this and return a dictionary for each sample
+            where the key will be the sample name and the value will be a dictionary which will be
+            key of actual sequences and relabund of the seq once we have all of these we can get a global diversity
+            of sequence and we can also get a global abundance of the seuqences so that we can plot the
+            most abundant sequenecs first.
+            """
+
+            if os.path.isfile(os.path.join(self.parent.cache_dir, 'sample_abundance_df.p')):
+                sample_abundance_df = pd.read_pickle(os.path.join(self.parent.cache_dir, 'sample_abundance_df.p'))
+            else:
+                input_q = Queue()
+
+                for ind in self.parent.coral_info_df_for_figures.index.values.tolist():
+                    input_q.put((ind, self.parent.coral_info_df_for_figures.loc[ind, 'sample_dir']))
+
+                for n in range(numProc):
+                    input_q.put('STOP')
+
+                all_procs = []
+                for n in range(numProc):
+                    p = Process(target=self._abundance_worker, args=(input_q,))
+                    all_procs.append(p)
+                    p.start()
+
+                for p in all_procs:
+                    p.join()
+
+                # At this stage we have pickled out abundance dictionaries for each of the samples in their
+                # respective directories
+
+                # Now we go through each of samples and check to see if each of the seqs is found in the master seq dict
+                # or if it is a subset or superset of any of the strings. This has the potential to be very slow
+                # so we could maybe chunk this and do it MP. But for the time being lets try to do it serial.
+
+                # First we will go through each of the samples and
+                # generate a set of sequence for the master_abund_dict
+                # that will be the largest superset sequences of all the sequences found in the samples.
+
+                # Once we've done that, then we will go back through the sequences and see which
+                # sequences the sample's sequences should be associated to.
+                # We should pickle out along the way to save us time if we have to re-run
+
+                master_abund_dict = self._get_master_abund_dict()
+
+                # Now we once again go sample by sample, seq by seq and check all of the seqs in each sample and
+                # identify which of the master abund dict sequences the sequence in question should be associated to.
+                # We then use that representative sequence to populate the dataframe
+
+                header_seq_s = self._make_sample_abundance_df_columns_headers(master_abund_dict)
+                sample_abundance_df = self._make_empty_abundance_df(header_seq_s)
+
+                # For every coral sample
+                for ind in self.parent.coral_info_df_for_figures.index.values.tolist():
+
+                    print('Populating df with {}'.format(ind))
+                    sample_dir = self.parent.coral_info_df_for_figures.loc[ind, 'sample_dir']
+                    if os.path.isfile(os.path.join(sample_dir, 'sample_abundance_series.pkl')):
+                        sample_abundance_series = pd.read_pickle(os.path.join(sample_dir, 'sample_abundance_series.pkl'))
+                    else:
+                        sample_abundance_series = self._generate_sample_abundance_series_from_scratch(
+                            header_seq_s, ind, master_abund_dict, sample_dir)
+                    sample_abundance_df = sample_abundance_df.append(sample_abundance_series)
+                # at this point we have fully populated the sample_abundance_df and we should pickle it out
+                sample_abundance_df.to_pickle(os.path.join(self.parent.cache_dir, 'sample_abundance_df.p'))
+
+            return sample_abundance_df
+
+        def _generate_sample_abundance_series_from_scratch(self, header_seq_s, ind, master_abund_dict, sample_dir):
+            # create an empty series that will be full of float 0s to start with
+            sample_abundance_series = pd.Series(name=ind, data=[float(0) for i in header_seq_s],
+                                                index=header_seq_s)
+            sample_abund_dict = pickle.load(open(os.path.join(sample_dir, 'seq_abund_dict.pickle'), 'rb'))
+            # For every sequence in the sample
+            for sample_key_sequence, v_sample in sample_abund_dict.items():
+                # list that holds the sequences that are either a subset or superset of the sample sequence
+                sub_or_super_match_list = []
+                exact_match = False
+                # For every sequence in the master abundance dictionary
+                for master_key_sequence, v_master in master_abund_dict.items():
+                    if sample_key_sequence == master_key_sequence:
+                        # then we have an exact match and this is the sequence that
+                        # the abundance should be associated to.
+                        # else continue to work with the match_list etc.
+                        sample_abundance_series[master_key_sequence] += v_sample
+                        exact_match = True
+                        break
+                    if sample_key_sequence in master_key_sequence or master_key_sequence in sample_key_sequence:
+                        sub_or_super_match_list.append(master_key_sequence)
+                if exact_match:
+                    continue
+                # here we have not acheived an exact match and we should work with the list
+                # here we have checked each of the master sequences
+                if not sub_or_super_match_list:
+                    # this should never happen
+                    continue
+                elif len(sub_or_super_match_list) == 1:
+                    # then we have a single match and this is the column of the df that we should associate the
+                    # abundance to
+                    sample_abundance_series[sub_or_super_match_list[0]] += v_sample
+
+                elif len(sub_or_super_match_list) > 1:
+                    # then we have a bit of a problem here and we need to work out what to do from looking at the
+                    # situation
+                    # this is a particular situation and has happened when there is a sequence that is shorter than the
+                    # majority and one of the sequences has a differntiating snp in the difference in sequence length.
+                    # for the time being I will attribute the abundance of this sequence to the most abundant match
+                    sorted_tups_temp = sorted([(seq, master_abund_dict[seq]) for seq in sub_or_super_match_list],
+                                              key=lambda x: x[1],
+                                              reverse=True)
+                    most_abund_seq = [a[0] for a in sorted_tups_temp][0]
+                    sample_abundance_series[most_abund_seq] += v_sample
+            # here we have the series for the sample populated.
+            # now add this to the dataframe
+            # pickle out the series to save time
+            sample_abundance_series.to_pickle('{}/sample_abundance_series.pkl'.format(sample_dir))
+            return sample_abundance_series
+
+        def _make_empty_abundance_df(self, header_seq_s):
+            sample_abundance_df = pd.DataFrame(columns=header_seq_s)
+            return sample_abundance_df
+
+        def _make_sample_abundance_df_columns_headers(self, master_abund_dict):
+            sorted_tups = sorted(list(master_abund_dict.items()), key=lambda x: x[1], reverse=True)
+            header_seq_s = [a[0] for a in sorted_tups]
+            return header_seq_s
+
+        def _get_master_abund_dict(self):
+            if os.path.isfile(os.path.join(self.parent.cache_dir, 'master_abund_dict.p')):
+                master_abund_dict = pickle.load(
+                    open(os.path.join(self.parent.cache_dir, 'master_abund_dict.p'), 'rb'))
+            else:
+                master_abund_dict = self._make_master_abund_dict()
+            return master_abund_dict
+
+        def _make_master_abund_dict(self):
+            master_abund_dict = defaultdict(float)
+            # For every coral sample
+            for ind in self.parent.coral_info_df_for_figures.index.values.tolist():
+                print('Counting {}'.format(ind))
+                sample_dir = self.parent.coral_info_df_for_figures.loc[ind, 'sample_dir']
+                sample_abund_dict = pickle.load(open(os.path.join(sample_dir, 'seq_abund_dict.pickle'), 'rb'))
+                # For every sequence in the coral
+                for sample_key_sequence, v_sample in sample_abund_dict.items():
+                    # For each of the sequences, see if it is found within one of the
+                    # master_abund_dicts sequences.
+                    # Check to see that it is not found in more than one of the sequences too.
+                    # If it is then this is a problem but there may be a simple solution,
+                    # i.e. consolidating the two sequences.
+
+                    # list that holds the sequences that are either a subset or superset of the sample sequence
+                    sub_or_super_match_list = []
+                    # For every sequence in the master dictionary
+                    for master_key_sequence, v_master in master_abund_dict.items():
+                        if sample_key_sequence in master_key_sequence or master_key_sequence in sample_key_sequence:
+                            sub_or_super_match_list.append(master_key_sequence)
+
+                    # here we have checked each of the master sequences
+                    if not sub_or_super_match_list:
+                        # if the match list is empty then this is a new sequence and we can add it to the master_abund_dict
+                        master_abund_dict[sample_key_sequence] += v_sample
+                    elif len(sub_or_super_match_list) == 1:
+                        self._update_representative_master_sequence_abundance(
+                            master_abund_dict, sample_key_sequence, sub_or_super_match_list, v_sample)
+                    elif len(sub_or_super_match_list) > 1:
+                        # Then we have a bit of a problem here and we need to work out what to do.
+                        # From looking at the situation
+                        # this is a particular situation and has happened when there is a sequence that
+                        # is shorter than the majority and one of the sequences has a differntiating snp
+                        # in the difference in sequence length.
+                        # For the time being I will attribute the abundance
+                        # of this sequence to the most abundant match
+                        most_abund_seq = [a[0] for a in
+                                          sorted([(seq, master_abund_dict[seq]) for seq in sub_or_super_match_list],
+                                                 key=lambda x: x[1], reverse=True)][0]
+                        master_abund_dict[most_abund_seq] += v_sample
+                        continue
+            # at this point we have the master_abund_dict populated and we should pickle it out
+            pickle.dump(master_abund_dict, open(os.path.join(self.parent.cache_dir, 'master_abund_dict.p'), 'wb'))
+            return master_abund_dict
+
+        def _update_representative_master_sequence_abundance(self, master_abund_dict, sample_key_sequence,
+                                                             sub_or_super_match_list, v_sample):
+            # Then we have a single match.
+            if self._if_sample_seq_is_subset_of_master_seq(
+                    master_seq=sub_or_super_match_list[0], sample_seq=sample_key_sequence):
+                self._attribute_sample_seq_abund_to_master_seq_representative(
+                    master_abund_dict, sub_or_super_match_list, v_sample)
+            elif self._if_master_seq_is_subset_of_sample_seq(
+                    master_seq=sub_or_super_match_list[0], sample_seq=sample_key_sequence):
+                self._make_sample_seq_representative_and_update_abund(
+                    master_abund_dict, sample_key_sequence, sub_or_super_match_list, v_sample)
+
+        def _attribute_sample_seq_abund_to_master_seq_representative(self, master_abund_dict, sub_or_super_match_list,
+                                                                     v_sample):
+            # if the sample is a subset of one of the master_abund_dicts then its
+            # abundance should be attributed to this sequence
+            master_abund_dict[sub_or_super_match_list[0]] += v_sample
+
+        def _make_sample_seq_representative_and_update_abund(self, master_abund_dict, sample_key_sequence,
+                                                             sub_or_super_match_list, v_sample):
+            # else if the sample sequences contains the master sequence, then the master sequence
+            # should be updated to the seq in question, the current abundance should be associated
+            # to this new sequence and the abundance of the seq in q should also be attributed (added)
+            temp_abundance = master_abund_dict[sub_or_super_match_list[0]]
+            del master_abund_dict[sub_or_super_match_list[0]]
+            master_abund_dict[sample_key_sequence] = temp_abundance
+            master_abund_dict[sample_key_sequence] += v_sample
+
+        def _if_master_seq_is_subset_of_sample_seq(self, master_seq, sample_seq):
+            return master_seq in sample_seq
+
+        def _if_sample_seq_is_subset_of_master_seq(self, master_seq, sample_seq):
+            return sample_seq in master_seq
+
+        def _abundance_worker(self, input_q):
+            """This worker will be run in a multiprocessing framework and will work on a sample
+            by sample basis to create a dictionary per sample. This dictionary will
+            be the nucleotide sequence as key and the relative abundance as the value. These
+            dictionaries will then be collected outside of the multiprocessing framework
+            so that overall abundances across samples can be calculated."""
+            for sample_name, sample_dir in iter(input_q.get, 'STOP'):
+                # check to see if the sample's abundance dictionary has already been created
+                if os.path.isfile(os.path.join(sample_dir, 'seq_abund_dict.pickle')):
+                    continue
+
+                # I want this dictionary to have key as the raw sequence and the relative abundance
+                # as the value
+                sample_dict = defaultdict(int)
+
+                sys.stdout.write('\nSample {}\n'.format(sample_dir))
+
+                # for each sample we will only need two files
+                # we will need the name file inorder to create an abundance dict
+                # then we will need the coral_genus_only.fasta file so that we know which sequences we should be counting
+
+                # read in the name file
+                with open('{}/stability.trim.contigs.good.abund.pcr.names'.format(sample_dir), 'r') as f:
+                    name_file = [line.rstrip() for line in f]
+
+                abund_dict = {line.split('\t')[0]: len(line.split('\t')[1].split(',')) for line in name_file}
+
+                # now read in the coral_genus_only.fasta
+                with open('{}/coral_genus_only.fasta'.format(sample_dir), 'r') as f:
+                    coral_genus_fasta = [line.rstrip() for line in f]
+
+                # here we have the abund dict and the coral_genus fasta
+                # now we can go sesquence by sequence through the fasta and look up the abund and add to the sample_dict
+                # Becuase we didn't do a find seqs.unique it is quite possible that there are sequences that are the same
+                # and so we should use a default dict to make the abundance dictionary for the sample
+                for i in range(0, len(coral_genus_fasta), 2):
+                    sample_dict[coral_genus_fasta[i + 1]] += abund_dict[coral_genus_fasta[i][1:]]
+
+                # now normalise the seq abundances
+                tot_seqs = sum(sample_dict.values())
+                normalised_sample_dict = {k: v / tot_seqs for k, v in sample_dict.items()}
+
+                # here we have the samples abundance dictionary populated. Now pickle out
+                pickle.dump(normalised_sample_dict, open(os.path.join(sample_dir, 'seq_abund_dict.pickle'), 'wb'))
+
+    def _generate_info_df_for_samples(self):
+        """Generate two dataframes, the first that contains information from all samples
+        The second will contain information from only the coral samples and will be used in the plotting.
+        This information will be gathered by parsing the directory
+        structure that the fastq sequencing files are housed in
+        """
+        if os.path.isfile(os.path.join(self.cache_dir, 'info_df.p')):
+            return pickle.load(open(os.path.join(self.cache_dir, 'all_samples_info_df.p'), 'rb'))
+        else:
+            columns_for_df = ['sample_name', 'fastq_fwd_file_path', 'fastq_rev_file_path', 'coral_plankton',
+                              'spp_water', 'location', 'site', 'size_fraction']
+            self.all_samples_info_df = pd.DataFrame(columns=columns_for_df)
+
+            # now lets parse through the directories using them to get some of the information facts above
+            self._parse_data_dir_structure_to_infer_sample_info_and_populate_df()
+
+            pickle.dump(self.all_samples_info_df, open(os.path.join(self.cache_dir,'all_samples_info_df.p'), 'wb'))
+
+            self._generate_coral_info_df_for_figures_from_all_sample_info_df()
+
+            pickle.dump(self.coral_info_df_for_figures,
+                        open(os.path.join(self.cache_dir, 'coral_info_df_for_figures.p'), 'wb'))
+
+    def _generate_coral_info_df_for_figures_from_all_sample_info_df(self):
+        if os.path.isfile(os.path.join(self.cache_dir, 'coral_info_df_for_figures.p')):
+            return pickle.load(open('{}/fig_info_df.pickle'.format(os.getcwd()), 'rb'))
+        else:
+            self.coral_info_df_for_figures = pd.DataFrame(columns=['island', 'site', 'genus', 'individual', 'sample_dir'])
+            for ind in self.all_samples_info_df.index.values.tolist():
+                if 'CORAL' in self.all_samples_info_df.loc[ind, 'fastq_fwd_file_path']:
+                    fastq_string = self.all_samples_info_df.loc[ind, 'fastq_fwd_file_path']
+                    components = fastq_string.split('/')
+                    smp_site = components[-6]
+                    smp_island = components[-7]
+                    smp_individual = components[-3]
+                    smp_genus = components[-4]
+                    smp_dir = '/'.join(components[:-1])
+                    self.coral_info_df_for_figures = self.coral_info_df_for_figures.append(
+                        pd.Series(name=ind, data=[smp_island, smp_site, smp_genus, smp_individual, smp_dir],
+                                  index=['island', 'site', 'genus', 'individual', 'sample_dir']))
+
+
+    def _parse_data_dir_structure_to_infer_sample_info_and_populate_df(self):
+        """Parse through the directory strucutre that holds the fastq files to get
+        the sample infomation and populate the info_df """
+        for location in os.listdir(self.data_root_dir):
+            info_dir_parser = self.InfoDirectoryParser(parent=self, location=location)
+            info_dir_parser.parse()
+
+    class InfoDirectoryParser:
+        def __init__(self, parent, location):
+            self.parent = parent
+            self.location = location
+            self.current_dir = None
+            self.sample_type = None
+            self.site = None
+            self.spp_water = None
+            self.size_fraction = None
+            self.individual = None
+
+        def parse(self):
+            if 'ISLAND' in self.location:
+                self._parse_island_directory()
+
+            elif 'OA' in self.location:
+                self._parse_oa_directory()
+
+        def _parse_oa_directory(self,):
+            self.current_dir = os.path.join(self.parent.data_root_dir, self.location, 'PLANKTON', 'SURFACE')
+            for size_fraction_indi in os.listdir(self.current_dir):
+                self.size_fraction = size_fraction_indi
+                self.current_dir = os.path.join(self.current_dir, size_fraction_indi)
+                self.spp_water = 'PLANKTON'
+                self.sample_type = 'OA'
+                self.site = 'OA'
+                self._populate_info_df_sample_row()
+
+        def _parse_island_directory(self):
+            self.current_dir = os.path.join(self.parent.data_root_dir, self.location)
+            for site in os.listdir(self.current_dir):
+                self.site = site
+                self.current_dir = os.path.join(self.current_dir, self.site)
+                for sample_type in os.listdir(self.current_dir):
+                    self.sample_type = sample_type
+                    self.current_dir = os.path.join(self.current_dir, sample_type)
+
+                    if sample_type == 'CORAL':
+                        self.size_fraction = 'coral'
+                        self._parse_coral_directory()
+
+                    elif sample_type == 'PLANKTON':
+                        self._parse_plankton_directory()
+
+        def _parse_plankton_directory(self):
+            for water_type in os.listdir(self.current_dir):
+                self.spp_water = water_type
+                if water_type == 'CSW':
+                    self._parse_csw_directory()
+                elif water_type == 'SURFACE':
+                    self._parse_surface_directory()
+
+        def _parse_surface_directory(self):
+            # then this is a SURFACE sample and there are no individuals
+            self.size_fraction='S320'
+            self.current_dir = os.path.join(self.current_dir, self.spp_water, self.size_fraction)
+            # collect the information we need
+            self._populate_info_df_sample_row()
+
+        def _parse_csw_directory(self):
+            self.current_dir = os.path.join(self.current_dir, self.spp_water)
+            for individual in os.listdir(self.current_dir):
+                self.current_dir = os.path.join(self.current_dir, individual)
+                for size_fraction_indi in os.listdir(self.current_dir):
+                    self.size_fraction = size_fraction_indi
+                    self.current_dir = os.path.join(self.current_dir, self.size_fraction)
+                    # now we are in the directory that contains the actual paired fastq.gz files for a
+                    # given water sample
+                    self._populate_info_df_sample_row()
+
+        def _parse_coral_directory(self):
+            for species in os.listdir(self.current_dir):
+                self.spp_water = species
+                self.current_dir = os.path.join(self.current_dir, self.spp_water)
+                for individual in os.listdir(self.current_dir):
+                    self.individual = individual
+                    self.current_dir = os.path.join(self.current_dir, self.individual, 'CS4L')
+                    # now we are in the directory that contains the actual paired fastq.gz files for a
+                    # given coral individual
+                    # collect the information we need
+                    self._populate_info_df_sample_row()
+
+        def _populate_info_df_sample_row(self):
+
+            sample_name = os.listdir(self.current_dir)[0].split('_')[0]
+
+            fwd_path, rev_path = self._get_fwd_and_rev_fastq_paths()
+
+            temp_dict = {
+                'fastq_fwd_file_path': fwd_path, 'fastq_rev_file_path': rev_path, 'coral_plankton': self.sample_type,
+                'spp_water': self.spp_water, 'location': self.location, 'site': self.site, 'size_fraction': self.size_fraction
+            }
+
+            temp_series = pd.Series(data=temp_dict, name=sample_name)
+
+            self.info_df = self.info_df.append(temp_series)
+
+        def _get_fwd_and_rev_fastq_paths(self):
+            files = os.listdir(self.current_dir)
+            files = self._marge_fastq_files_if_more_than_two_exist(files)
+            fwd_path, rev_path = self._infer_fastq_paths(files)
+            return fwd_path, rev_path
+
+        def _infer_fastq_paths(self, files):
+            fwd_found = False
+            rev_found = False
+            fwd_path = None
+            rev_path = None
+            for file_name in files:
+                if 'R1' in file_name:
+                    fwd_path = os.path.join(self.current_dir, file_name)
+                    fwd_found = True
+                elif 'R2' in file_name:
+                    rev_path = os.path.join(self.current_dir, file_name)
+                    rev_found = True
+            # make sure that both the fwd and rev paths have been identified
+            if not fwd_found or not rev_found:
+                print('fwd or rev read not found')
+                sys.exit(1)
+            return fwd_path, rev_path
+
+        def _marge_fastq_files_if_more_than_two_exist(self, files):
+            if len(files) != 2:
+                print('merging fastqs in {}'.format(self.current_dir))
+                # this method will merge the fastqs together so that 4 turn into 2.
+                self._merge_fastqs(files)
+
+                # finally re-read in the files
+                files = os.listdir(self.current_dir)
+                if len(files) != 2:
+                    print('we still gotta problem {}'.format(self.current_dir))
+                    sys.exit(0)
+            return files
+
+        def _merge_fastqs(self, files):
+            # If we get here then there have been multiple sequencing runs for the same sample
+            # we will aim to simply merge the fastqs together insitu
+            # first get the name that we want to use (this is the one containing BG
+            one_found = False
+            two_found = False
+            R1_name = None
+            R2_name = None
+            for file_name in files:
+                if 'BG' in file_name and 'R1' in file_name:
+                    R1_name = file_name
+                    one_found = True
+                if 'BG' in file_name and 'R2' in file_name:
+                    R2_name = file_name
+                    two_found = True
+            if not one_found or not two_found:
+                # then this may be due to there not being a BG file
+                # so we just take the first name
+                for file_name in files:
+                    if 'R1' in file_name:
+                        R1_name = file_name
+                        R2_name = file_name.replace('R1', 'R2')
+                print('couldnt find the right files {}'.format(self.current_dir))
+            # second unzip all of the files
+            for file_name in files:
+                subprocess.run(['gunzip', '{}/{}'.format(self.current_dir, file_name)])
+            # now we have all of the files unzipped
+            # now look at each of the files and add them to a master R1 and R2.
+            # it doesn't matter whether we add the R1 or R2 first. So long as we add the pair at the same time
+            un_files = os.listdir(self.current_dir)
+            master_fastq_R1 = []
+            master_fastq_R2 = []
+            for un_file in un_files:
+                # we should go into this if twice once for each pair
+                if 'R1' in un_file:
+                    # then we can read this and its pair
+                    rone_path = '{}/{}'.format(self.current_dir, un_file)
+                    with open(rone_path, 'r') as f:
+                        rone_file = [line.rstrip() for line in f]
+                    master_fastq_R1.extend(rone_file)
+
+                    # now do the same for the corresponing R2 file
+                    rtwo_path = '{}/{}'.format(self.current_dir, un_file.replace('R1', 'R2'))
+                    with open(rtwo_path, 'r') as f:
+                        rtwo_file = [line.rstrip() for line in f]
+                    master_fastq_R2.extend(rtwo_file)
+
+                    # now delte the files
+                    os.remove(rone_path)
+                    os.remove(rtwo_path)
+            # here we have a master file for the R1 and R2. We can now write it out to the name that we have
+            rone_path_to_write = '{}/{}'.format(self.current_dir, R1_name.replace('.gz', ''))
+            with open(rone_path_to_write, 'w') as f:
+                for line in master_fastq_R1:
+                    f.write('{}\n'.format(line))
+            rtwo_path_to_write = '{}/{}'.format(self.current_dir, R2_name.replace('.gz', ''))
+            with open(rtwo_path_to_write, 'w') as f:
+                for line in master_fastq_R2:
+                    f.write('{}\n'.format(line))
+            # now we simply need to recompress the files
+            un_files = os.listdir(self.current_dir)
+            for un_file in un_files:
+                subprocess.run(['gzip', '{}/{}'.format(self.current_dir, un_file)])
