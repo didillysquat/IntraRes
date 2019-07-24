@@ -183,6 +183,7 @@ def convert_interleaved_to_sequencial_fasta_two(fasta_in):
     return fasta_out
 
 # This is the code for plotting the PCOA of 18s with the ITS2 zooxs data below
+
 def plot_pcoa_spp_18s_its2(is_three_d = False):
     info_df = generate_info_df_for_samples()
     fig_info_df = generate_fig_indo_df(info_df)
@@ -636,910 +637,6 @@ def process_div_df(path_to_tab_delim_count_DIV):
     return smp_id_to_smp_name_dict, smp_name_to_smp_id_dict, sp_output_df
 
 
-# This is the code for producing the 18s pcoa with either the 3rd and 4th PC underneath or a 3d graph.
-def plot_pcoa_spp(is_three_d = False):
-    info_df = generate_info_df_for_samples()
-    fig_info_df = generate_fig_indo_df(info_df)
-
-    # for each species
-    # get the pcoa df
-    pcoa_df_dict = generate_bray_curtis_distance_and_pcoa_spp()
-    # setup figure
-    spp_list = ['Porites', 'Pocillopora', 'Millepora']
-    axarr=[]
-    fig = plt.figure(figsize=(18, 10))
-
-    gs = plt.GridSpec(3, 6, figure=fig, width_ratios=[1, 0.2, 1, 0.2, 1, 0.5], height_ratios=[1,0.2,1])
-    for j in range(0,3,2):
-        for i in range(0, 5, 2):
-            if is_three_d:
-                if j == 1:
-                    axarr.append(fig.add_subplot(gs[j,i], projection='3d'))
-                else:
-                    axarr.append(plt.subplot(gs[j,i]))
-            else:
-                axarr.append(plt.subplot(gs[j, i]))
-
-    legend_ax = plt.subplot(gs[:, 5])
-    remove_axes_but_allow_labels(legend_ax)
-    for spp in spp_list:
-
-        ax = axarr[spp_list.index(spp)]
-        ax_second = axarr[spp_list.index(spp) + 3]
-
-        df_of_spp = pcoa_df_dict[spp]
-
-        # x values
-        x_values = df_of_spp['PC1'].values.tolist()[:-1]
-
-        # y values
-        y_values = df_of_spp['PC2'].values.tolist()[:-1]
-
-        # z values
-        z_values = df_of_spp['PC3'].values.tolist()[:-1]
-
-        # pc4 values
-        pc4_values = df_of_spp['PC4'].values.tolist()[:-1]
-
-        samples_of_spp = df_of_spp.index.values.tolist()[:-1]
-        # get list of colours and list of markers
-        # colours can designate islands
-        colour_dict = {'SITE01': '#C0C0C0', 'SITE02': '#808080', 'SITE03': '#000000'}
-        colour_list = [colour_dict[fig_info_df.loc[smp, 'site']] for smp in samples_of_spp]
-
-        # shapes can designate sites
-
-        marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
-        marker_list = [marker_dict[fig_info_df.loc[smp, 'island']] for smp in samples_of_spp]
-
-
-        # plot the points
-        for x_val, y_val, col, mark in zip(x_values, y_values, colour_list, marker_list):
-            ax.scatter(x_val, y_val, c=col, marker=mark)
-
-        # add axes labels
-        ax.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp['PC1'][-1]))
-        ax.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp['PC2'][-1]))
-        # set axis title
-        ax.set_title('{}'.format(spp))
-        if is_three_d:
-            # then lets plot the 3d equivalent below the 3d figs
-            # plot the points
-            for x_val, y_val, z_val, col, mark in zip(x_values, y_values, z_values, colour_list, marker_list):
-                ax_second.scatter(x_val, y_val, z_val, c=col, marker=mark)
-
-            # add axes labels
-            ax_second.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp['PC1'][-1]))
-            ax_second.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp['PC2'][-1]))
-            ax_second.set_zlabel('PC3; explained = {}'.format('%.3f' % df_of_spp['PC3'][-1]))
-
-
-        else:
-            # else lets just plot out the 3rd and 4th PCs below
-            # plot the points
-            for z_val, pc4_val, col, mark in zip(z_values, pc4_values, colour_list, marker_list):
-                ax_second.scatter(z_val, pc4_val, c=col, marker=mark)
-
-            # add axes labels
-            ax_second.set_xlabel('PC3; explained = {}'.format('%.3f' % df_of_spp['PC3'][-1]))
-            ax_second.set_ylabel('PC4; explained = {}'.format('%.3f' % df_of_spp['PC4'][-1]))
-
-    # here we should put together the legend axis
-    vert_leg_axis(colour_dict, legend_ax, marker_dict)
-
-    fig.show()
-    if not is_three_d:
-        plt.savefig('spp_pcoa_with_pc3_pc4.png'.format())
-        plt.savefig('spp_pcoa_with_pc3_pc4.svg'.format())
-
-    return
-
-# this is the code for producing a pcoa per island per species.
-def plot_pcoa_spp_island():
-    info_df = generate_info_df_for_samples()
-    fig_info_df = generate_fig_indo_df(info_df)
-
-    # for each species
-    # get the pcoa df
-    pcoa_df_dict = generate_bray_curtis_distance_and_pcoa_spp_and_island()
-    # setup figure
-    spp_list = ['PORITES', 'POCILLOPORA', 'MILLEPORA']
-
-    island_list = ['ISLAND06', 'ISLAND10', 'ISLAND15']
-
-    axarr = []
-
-    fig = plt.figure(figsize=(18, 10))
-
-    gs = plt.GridSpec(5, 7, figure=fig, width_ratios=[1, 0.2, 1, 0.2, 1,0.2, 0.5], height_ratios=[1, 0.2, 1, 0.2, 1])
-    for j in range(0, 5, 2):
-        for i in range(0, 5, 2):
-            axarr.append(plt.subplot(gs[j, i]))
-
-    legend_ax = plt.subplot(gs[:, 6])
-    remove_axes_but_allow_labels(legend_ax)
-    ax_count = 0
-    for spp in spp_list:
-        for island in island_list:
-
-            ax = axarr[ax_count]
-
-            df_of_spp_island = pcoa_df_dict['{}_{}'.format(spp, island)]
-
-            # x values
-            x_values = df_of_spp_island['PC1'].values.tolist()[:-1]
-
-            # y values
-            y_values = df_of_spp_island['PC2'].values.tolist()[:-1]
-
-            samples_of_spp = df_of_spp_island.index.values.tolist()[:-1]
-            # get list of colours and list of markers
-            # colours can designate islands
-            colour_dict = {'SITE01': '#C0C0C0', 'SITE02': '#808080', 'SITE03': '#000000'}
-            colour_list = [colour_dict[fig_info_df.loc[smp, 'site']] for smp in samples_of_spp]
-
-            # shapes can designate sites
-
-            marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
-            marker_list = [marker_dict[fig_info_df.loc[smp, 'island']] for smp in samples_of_spp]
-
-            # plot the points
-            for x_val, y_val, col, mark in zip(x_values, y_values, colour_list, marker_list):
-                ax.scatter(x_val, y_val, c=col, marker=mark)
-
-            # add axes labels
-            ax.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp_island['PC1'][-1]))
-            ax.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp_island['PC2'][-1]))
-            # set axis title
-            if ax_count in [0,1,2]:
-                ax.set_title('{}'.format(island) , fontsize='large', fontweight='bold')
-            if ax_count in [2,5,8]:
-                ax2 = ax.twinx()
-                ax2.yaxis.set_ticklabels([])
-                ax2.yaxis.set_ticks_position('none')
-                ax2.set_ylabel(spp, fontsize='large', fontweight='bold')
-
-            ax_count += 1
-
-    # here we should put together the legend axis
-    vert_leg_axis(colour_dict, legend_ax, marker_dict)
-
-    fig.show()
-    plt.savefig('spp_island_pcoa.png'.format())
-    plt.savefig('spp_island_pcoa.svg'.format())
-    return
-
-
-def vert_leg_axis(colour_dict, legend_ax, marker_dict):
-    legend_ax.set_ylim(0, 1)
-    legend_ax.set_xlim(0, 1)
-    legend_ax.invert_yaxis()
-    number_of_icons = 6
-    island_list = ['ISLAND06', 'ISLAND10', 'ISLAND15']
-    site_list = ['SITE01', 'SITE02', 'SITE03']
-    icon_list = []
-    # first populate the island icons
-    for site in site_list:
-        icon_list.append((colour_dict[site], marker_dict['ISLAND06']))
-    # then populate the site icons
-    for island in island_list:
-        icon_list.append((colour_dict['SITE01'], marker_dict[island]))
-    # lets assume that the axis is divided into 20 spaces for icons
-    max_number_icons = 20
-    # the  icon position should be mid way so max_number_icons
-    # first icon position
-    first_icon_position = int((max_number_icons - number_of_icons) / 2)
-    pos_counter = first_icon_position
-    for i in range(len(icon_list)):
-        y_val_for_icon_and_text = (1 / max_number_icons) * pos_counter
-        x_val_for_icon = 0.1
-        x_val_for_text = x_val_for_icon + 0.2
-        legend_ax.scatter(x=x_val_for_icon, y=y_val_for_icon_and_text, c=icon_list[i][0], marker=icon_list[i][1], s=100)
-
-        if int(i / 3) == 0:
-            legend_ax.text(s=site_list[i], x=x_val_for_text, y=y_val_for_icon_and_text)
-        elif int(i / 3) == 1:
-            legend_ax.text(s=island_list[i % 3], x=x_val_for_text, y=y_val_for_icon_and_text)
-        pos_counter += 1
-
-
-# This is code for generating PCOAs for each of the coral species.
-def generate_bray_curtis_distance_and_pcoa_spp():
-    # Read in the minor div dataframe which should have normalised abundances in them
-    # For each sample we have a fasta that we can read in which has the normalised (to 1000) sequences
-    # For feeding into med. We can use a default dict to collect the sequences and abundances from this fairly
-    # simply.
-    # This is likely best done on for each sample outside of the pairwise comparison to save on redoing the same
-    # collection of the sequences.
-    # get info_df
-    info_df = generate_info_df_for_samples()
-
-    # get fig_info_df
-    fig_info_df = generate_fig_indo_df(info_df)
-
-    if os.path.isfile('{}/minor_div_abundance_dict.pickle'.format(os.getcwd())):
-        minor_div_abundance_dict = pickle.load(open('{}/minor_div_abundance_dict.pickle'.format(os.getcwd()), 'rb'))
-
-    else:
-
-        # this dict will have sample name as key and then a dict as value with seq to abundance values
-        # we can then work with this for the pairwise comparison
-        minor_div_abundance_dict = {}
-
-
-        for ind in fig_info_df.index.values.tolist():
-            sample_dir = fig_info_df.loc[ind, 'sample_dir']
-            with open('{}/fasta_for_med.fasta'.format(sample_dir), 'r') as f:
-                sample_fasta = [line.rstrip() for line in f]
-
-            sample_minor_abundance_dict = defaultdict(int)
-            for i in range(0, len(sample_fasta), 2):
-                sample_minor_abundance_dict[sample_fasta[i+1]] += 1
-
-            # here we have the dict popoulated for the sample
-            # we can now add this to the minor_div_abundace_dict
-            minor_div_abundance_dict[ind] = sample_minor_abundance_dict
-
-        # we should now pickle out this sample_minor_abundance_dict
-        pickle.dump(minor_div_abundance_dict, open('{}/minor_div_abundance_dict.pickle'.format(os.getcwd()), 'wb'))
-
-
-    # For each of the spp.
-    spp_pcoa_df_dict = {}
-    for spp in ['Porites', 'Pocillopora', 'Millepora']:
-        if os.path.isfile('{}/spp_pcoa_df_{}.pickle'.format(os.getcwd(), spp)):
-            spp_pcoa_df = pickle.load(open('{}/spp_pcoa_df_{}.pickle'.format(os.getcwd(), spp), 'rb'))
-        else:
-            # Get a list of the samples that we should be working with
-            sample_names_of_spp = fig_info_df.loc[fig_info_df['genus'] == spp.upper()].index.values.tolist()
-
-            # remove the two porites species form this that seem to be total outliers
-            if spp == 'Porites':
-                sample_names_of_spp.remove('CO0001674')
-                sample_names_of_spp.remove('CO0001669')
-
-
-            if os.path.isfile('{}/spp_distance_dict_{}.pickle'.format(os.getcwd(), spp)):
-                spp_distance_dict = pickle.load(open('{}/spp_distance_dict_{}.pickle'.format(os.getcwd(), spp), 'rb'))
-
-            else:
-                # Create a dictionary that will hold the distance between the two samples
-                spp_distance_dict = {}
-
-                # For pairwise comparison of each of these sequences
-                for smp_one, smp_two in itertools.combinations(sample_names_of_spp, 2):
-                    print('Calculating distance for {}_{}'.format(smp_one, smp_two))
-                    # Get a set of the sequences found in either one of the samples
-                    smp_one_abund_dict = minor_div_abundance_dict[smp_one]
-                    smp_two_abund_dict = minor_div_abundance_dict[smp_two]
-                    list_of_seqs_of_pair = []
-                    list_of_seqs_of_pair.extend(list(smp_one_abund_dict.keys()))
-                    list_of_seqs_of_pair.extend(list(smp_two_abund_dict.keys()))
-                    list_of_seqs_of_pair = list(set(list_of_seqs_of_pair))
-
-
-                    # then create a list of abundances for sample one by going through the above list and checking
-                    sample_one_abundance_list = []
-                    for seq_name in list_of_seqs_of_pair:
-                        if seq_name in smp_one_abund_dict.keys():
-                            sample_one_abundance_list.append(smp_one_abund_dict[seq_name])
-                        else:
-                            sample_one_abundance_list.append(0)
-
-                    # then create a list of abundances for sample two by going through the above list and checking
-                    sample_two_abundance_list = []
-                    for seq_name in list_of_seqs_of_pair:
-                        if seq_name in smp_two_abund_dict.keys():
-                            sample_two_abundance_list.append(smp_two_abund_dict[seq_name])
-                        else:
-                            sample_two_abundance_list.append(0)
-
-
-                    # Do the Bray Curtis.
-                    distance = braycurtis(sample_one_abundance_list, sample_two_abundance_list)
-
-                    # Add the distance to the dictionary using both combinations of the sample names
-                    spp_distance_dict['{}_{}'.format(smp_one, smp_two)] = distance
-                    spp_distance_dict['{}_{}'.format(smp_two, smp_one)] = distance
-
-                # doing this takes a bit of time so let's pickle it out
-                pickle.dump(spp_distance_dict, open('{}/spp_distance_dict_{}.pickle'.format(os.getcwd(), spp), 'wb'))
-
-            # Generate the distance out file from this dictionary
-            # from this dict we can produce the distance file that can be passed into the generate_PCoA_coords method
-            distance_out_file = [len(sample_names_of_spp)]
-            for sample_outer in sample_names_of_spp:
-                # The list that will hold the line of distance. This line starts with the name of the sample
-                temp_sample_dist_string = [sample_outer]
-
-                for sample_inner in sample_names_of_spp:
-                    if sample_outer == sample_inner:
-                        temp_sample_dist_string.append(0)
-                    else:
-                        temp_sample_dist_string.append(spp_distance_dict[
-                                                          '{}_{}'.format(sample_outer, sample_inner)])
-                distance_out_file.append('\t'.join([str(distance_item) for distance_item in temp_sample_dist_string]))
-
-            # from here we can hopefully rely on the rest of the methods as they already are. The .dist file should be
-            # written out
-
-            dist_out_path = '{}/bray_curtis_within_spp_sample_distances_{}.dist'.format(os.getcwd(), spp)
-
-            with open(dist_out_path, 'w') as f:
-                for line in distance_out_file:
-                    f.write('{}\n'.format(line))
-
-            # Feed this into the generate_PCoA_coords method
-            spp_pcoa_df = generate_PCoA_coords(distance_out_file, spp)
-            pickle.dump(spp_pcoa_df, open('{}/spp_pcoa_df_{}.pickle'.format(os.getcwd(), spp), 'wb'))
-        spp_pcoa_df_dict[spp] = spp_pcoa_df
-    return spp_pcoa_df_dict
-
-
-# I also want to generate a pcoa df set for each island within each species instead of with all of the islands
-# considered per species.
-# that is what we will generate here.
-def generate_bray_curtis_distance_and_pcoa_spp_and_island():
-    # Read in the minor div dataframe which should have normalised abundances in them
-    # For each sample we have a fasta that we can read in which has the normalised (to 1000) sequences
-    # For feeding into med. We can use a default dict to collect the sequences and abundances from this fairly
-    # simply.
-    # This is likely best done on for each sample outside of the pairwise comparison to save on redoing the same
-    # collection of the sequences.
-    # get info_df
-    info_df = generate_info_df_for_samples()
-
-    # get fig_info_df
-    fig_info_df = generate_fig_indo_df(info_df)
-
-    if os.path.isfile('{}/minor_div_abundance_dict.pickle'.format(os.getcwd())):
-        minor_div_abundance_dict = pickle.load(open('{}/minor_div_abundance_dict.pickle'.format(os.getcwd()), 'rb'))
-
-    else:
-
-        # this dict will have sample name as key and then a dict as value with seq to abundance values
-        # we can then work with this for the pairwise comparison
-        minor_div_abundance_dict = {}
-
-
-        for ind in fig_info_df.index.values.tolist():
-            sample_dir = fig_info_df.loc[ind, 'sample_dir']
-            with open('{}/fasta_for_med.fasta'.format(sample_dir), 'r') as f:
-                sample_fasta = [line.rstrip() for line in f]
-
-            sample_minor_abundance_dict = defaultdict(int)
-            for i in range(0, len(sample_fasta), 2):
-                sample_minor_abundance_dict[sample_fasta[i+1]] += 1
-
-            # here we have the dict popoulated for the sample
-            # we can now add this to the minor_div_abundace_dict
-            minor_div_abundance_dict[ind] = sample_minor_abundance_dict
-
-        # we should now pickle out this sample_minor_abundance_dict
-        pickle.dump(minor_div_abundance_dict, open('{}/minor_div_abundance_dict.pickle'.format(os.getcwd()), 'wb'))
-
-
-    # For each of the spp.
-    spp_island_pcoa_df_dict = {}
-    for spp in ['PORITES', 'POCILLOPORA', 'MILLEPORA']:
-        for island in ['ISLAND06', 'ISLAND10', 'ISLAND15']:
-            if os.path.isfile('{}/spp_island_pcoa_df_{}_{}.pickle'.format(os.getcwd(), spp, island)):
-                spp_island_pcoa_df = pickle.load(open('{}/spp_island_pcoa_df_{}_{}.pickle'.format(os.getcwd(), spp, island), 'rb'))
-            else:
-                # Get a list of the samples that we should be working with
-                sample_names_of_spp = fig_info_df.loc[(fig_info_df['genus'] == spp.upper()) & (fig_info_df['island'] == island.upper())].index.values.tolist()
-
-                #TODO remov the two porites species form this that seem to be total outliers
-                if spp == 'PORITES':
-                    if 'CO0001674' in sample_names_of_spp:
-                        sample_names_of_spp.remove('CO0001674')
-                        sample_names_of_spp.remove('CO0001669')
-
-
-                if os.path.isfile('{}/spp_island_distance_dict_{}_{}.pickle'.format(os.getcwd(), spp, island)):
-                    spp_island_distance_dict = pickle.load(open('{}/spp_island_distance_dict_{}_{}.pickle'.format(os.getcwd(), spp, island), 'rb'))
-
-                else:
-                    # Create a dictionary that will hold the distance between the two samples
-                    spp_island_distance_dict = {}
-
-                    # For pairwise comparison of each of these sequences
-                    for smp_one, smp_two in itertools.combinations(sample_names_of_spp, 2):
-                        print('Calculating distance for {}_{}'.format(smp_one, smp_two))
-                        # Get a set of the sequences found in either one of the samples
-                        smp_one_abund_dict = minor_div_abundance_dict[smp_one]
-                        smp_two_abund_dict = minor_div_abundance_dict[smp_two]
-                        list_of_seqs_of_pair = []
-                        list_of_seqs_of_pair.extend(list(smp_one_abund_dict.keys()))
-                        list_of_seqs_of_pair.extend(list(smp_two_abund_dict.keys()))
-                        list_of_seqs_of_pair = list(set(list_of_seqs_of_pair))
-
-
-                        # then create a list of abundances for sample one by going through the above list and checking
-                        sample_one_abundance_list = []
-                        for seq_name in list_of_seqs_of_pair:
-                            if seq_name in smp_one_abund_dict.keys():
-                                sample_one_abundance_list.append(smp_one_abund_dict[seq_name])
-                            else:
-                                sample_one_abundance_list.append(0)
-
-                        # then create a list of abundances for sample two by going through the above list and checking
-                        sample_two_abundance_list = []
-                        for seq_name in list_of_seqs_of_pair:
-                            if seq_name in smp_two_abund_dict.keys():
-                                sample_two_abundance_list.append(smp_two_abund_dict[seq_name])
-                            else:
-                                sample_two_abundance_list.append(0)
-
-
-                        # Do the Bray Curtis.
-                        distance = braycurtis(sample_one_abundance_list, sample_two_abundance_list)
-
-                        # Add the distance to the dictionary using both combinations of the sample names
-                        spp_island_distance_dict['{}_{}'.format(smp_one, smp_two)] = distance
-                        spp_island_distance_dict['{}_{}'.format(smp_two, smp_one)] = distance
-
-                    # doing this takes a bit of time so let's pickle it out
-                    pickle.dump(spp_island_distance_dict, open('{}/spp_island_distance_dict_{}_{}.pickle'.format(os.getcwd(), spp, island), 'wb'))
-
-                # Generate the distance out file from this dictionary
-                # from this dict we can produce the distance file that can be passed into the generate_PCoA_coords method
-                distance_out_file = [len(sample_names_of_spp)]
-                for sample_outer in sample_names_of_spp:
-                    # The list that will hold the line of distance. This line starts with the name of the sample
-                    temp_sample_dist_string = [sample_outer]
-
-                    for sample_inner in sample_names_of_spp:
-                        if sample_outer == sample_inner:
-                            temp_sample_dist_string.append(0)
-                        else:
-                            temp_sample_dist_string.append(spp_island_distance_dict[
-                                                              '{}_{}'.format(sample_outer, sample_inner)])
-                    distance_out_file.append('\t'.join([str(distance_item) for distance_item in temp_sample_dist_string]))
-
-                # from here we can hopefully rely on the rest of the methods as they already are. The .dist file should be
-                # written out
-
-                dist_out_path = '{}/bray_curtis_within_spp_island_sample_distances_{}_{}.dist'.format(os.getcwd(), spp, island)
-
-                with open(dist_out_path, 'w') as f:
-                    for line in distance_out_file:
-                        f.write('{}\n'.format(line))
-
-                # Feed this into the generate_PCoA_coords method
-                spp_island_pcoa_df = generate_PCoA_coords(distance_out_file, spp)
-                pickle.dump(spp_island_pcoa_df, open('{}/spp_island_pcoa_df_{}_{}.pickle'.format(os.getcwd(), spp, island), 'wb'))
-            spp_island_pcoa_df_dict['{}_{}'.format(spp, island)] = spp_island_pcoa_df
-    return spp_island_pcoa_df_dict
-
-def generate_PCoA_coords(raw_dist_file, spp):
-    # simultaneously grab the sample names in the order of the distance matrix and put the matrix into
-    # a twoD list and then convert to a numpy array
-    temp_two_D_list = []
-    sample_names_from_dist_matrix = []
-    for line in raw_dist_file[1:]:
-        temp_elements = line.split('\t')
-        sample_names_from_dist_matrix.append(temp_elements[0])
-        temp_two_D_list.append([float(a) for a in temp_elements[1:]])
-    uni_frac_dist_array = np.array(temp_two_D_list)
-    sys.stdout.write('\rcalculating PCoA coordinates')
-    pcoA_full_path = '{}/pcoa_coords_{}.csv'.format(os.getcwd(), spp)
-    pcoa_df = pcoa(uni_frac_dist_array)
-
-    # rename the dataframe index as the sample names
-    pcoa_df.samples['sample'] = sample_names_from_dist_matrix
-    renamed_dataframe = pcoa_df.samples.set_index('sample')
-
-    # now add the variance explained as a final row to the renamed_dataframe
-
-    renamed_dataframe = renamed_dataframe.append(pcoa_df.proportion_explained.rename('proportion_explained'))
-
-
-    return renamed_dataframe
-
-
-# This code will create MED node profiles for each of the samples, disregarding the most abundant sequence
-# NB after creating the MED sequences it was not much different to the raw sequences. This is likely becauase
-# all of the sequences were found at such low and even abundances. I think, moving forwards we should just stick with
-# working with the raw sequencs rather than the MED nodes.
-def create_MED_node_sample_abundance_df_for_minor_intras():
-    # we should go sample by sample using the abundance_df and write out a fasta for the MED
-    # this will be a subsample of 1000 sequences of the minor DIVs, which will be run with a dynamic
-    # m value on MED.
-    # we will then read in the MED and create a dict for each sample that is MED node sequence to relabund
-    # we will then come out of MP and go serial to collect all of the MED nodes and get a cumulative abundance
-    # across all samples. We will order this and use the MED nodes as columns for the new minor_intras_abund_df
-    # we will then go back through all of the samples in serial and populate the MED df
-    # at this point we can pickle this df out and we can put it directly into plotting code of below
-    # to create the same minor intra figure that we had before but with having done the MED.
-
-    if os.path.isfile('{}/minor_intra_med_abund_df.pickle'.format(os.getcwd())):
-        minor_intra_med_abund_df = pickle.load(open('{}/minor_intra_med_abund_df.pickle'.format(os.getcwd()), 'rb'))
-    else:
-        # get info_df
-        info_df = generate_info_df_for_samples()
-
-        # get fig_info_df
-        fig_info_df = generate_fig_indo_df(info_df)
-
-        # get the sample_abundance_df
-        sample_abundance_df = generate_seq_abundance_df(fig_info_df)
-
-        #MP sample by sample to do the MED
-        input_q = Queue()
-
-        # put in a tup of series. The first series being the info, the second being the current raw seq abundance df series
-        for ind in fig_info_df.index.values.tolist():
-            input_q.put((fig_info_df.loc[ind], sample_abundance_df.loc[ind]))
-
-        numProc = 20
-        for n in range(numProc):
-            input_q.put('STOP')
-
-        all_procs = []
-        for n in range(numProc):
-            p = Process(target=MED_worker, args=(input_q,))
-            all_procs.append(p)
-            p.start()
-
-        for p in all_procs:
-            p.join()
-
-        apples = 'asdf'
-        # here we have pickled out dictionaries of the MED nodes and their abundnaaces in each of the sample direcotires
-        # these abundances are relative abundances
-        # now have a master default dict and collect the abundances of the med nodes
-        master_abund_med_dict = defaultdict(float)
-        for ind in fig_info_df.index.values.tolist():
-            print('adding med nodes to master dict for {}'.format(ind))
-            sample_dir = fig_info_df.loc[ind, 'sample_dir']
-
-            # read in the pickled abundance dict
-            sample_med_abundance_dict = pickle.load(open('{}/sample_node_dict_rel_abund.pickle'.format(sample_dir), 'rb'))
-            for seq_key, seq_rel_abund in sample_med_abundance_dict.items():
-                master_abund_med_dict[seq_key] += seq_rel_abund
-
-        # here we have the master dict updated with all of the med node sequences
-        # sort and get list of med_node_seqs
-        sorted_med_node_seqs_tups = sorted(master_abund_med_dict.items(), key=lambda x:x[1], reverse=True)
-        med_node_seqs_sorted = [a[0] for a in sorted_med_node_seqs_tups]
-
-        # now create a df that will hold all of the sample abundances
-        minor_intra_med_abund_df = pd.DataFrame(columns=med_node_seqs_sorted)
-
-        # now go back through the samples again and populate the df by making a temp series
-        for ind in fig_info_df.index.values.tolist():
-            print('populating minor_intra_med_abund_df with {}'.format(ind))
-            sample_dir = fig_info_df.loc[ind, 'sample_dir']
-            sample_med_abundance_dict = pickle.load(open('{}/sample_node_dict_rel_abund.pickle'.format(sample_dir), 'rb'))
-            sample_data_in_order = []
-            for seq in med_node_seqs_sorted:
-                if seq in sample_med_abundance_dict.keys():
-                    sample_data_in_order.append(sample_med_abundance_dict[seq])
-                else:
-                    sample_data_in_order.append(float(0))
-
-            minor_intra_med_abund_df = minor_intra_med_abund_df.append(pd.Series(name=ind, data=sample_data_in_order, index=med_node_seqs_sorted))
-
-        # here we have the minor_intra_med_abund_df populated and we can pickle it out
-        pickle.dump(minor_intra_med_abund_df, open('{}/minor_intra_med_abund_df.pickle'.format(os.getcwd()), 'wb'))
-    return minor_intra_med_abund_df
-
-def MED_worker(input_q):
-    for info_series, abund_series in iter(input_q.get, 'STOP'):
-        # check to see if the MED has already been completed for the sample. If so then simply pass onto next sample
-        print('MED for {}'.format(abund_series.name))
-        sample_dir = info_series['sample_dir']
-        if os.path.isfile('{}/sample_node_dict_rel_abund.pickle'.format(sample_dir)):
-            continue
-
-        sample_name = abund_series.name
-        # now create a fasta for writing out
-        sample_fasta_for_MED = []
-        # https://pandas.pydata.org/pandas-docs/stable/generated/pandas.Series.nonzero.html
-        non_zero_series = abund_series[abund_series.nonzero()[0]]
-
-        seq_list_in_order = []
-        relabund_list_in_order = []
-
-        # we will skip the first sequence which is the most abundant
-        for seq in non_zero_series.index.values.tolist()[1:]:
-            rel_abund_div = abund_series.loc[seq]
-            seq_list_in_order.append(seq)
-            relabund_list_in_order.append(rel_abund_div)
-
-        # now re normalise the abundances
-        seq_counter = 0
-        tot = sum(relabund_list_in_order)
-        normalised_seq_abund_list = []
-        for i in range(len(seq_list_in_order)):
-            normalised_seq_abund = relabund_list_in_order[i] / tot
-            normalised_seq_abund_list.append(normalised_seq_abund)
-            absolute_abund_div = normalised_seq_abund * 1000
-            if int(absolute_abund_div) > 0:
-                for j in range(int(absolute_abund_div)):
-                    sample_fasta_for_MED.append('>raw_seq_{}'.format(seq_counter))
-                    sample_fasta_for_MED.append(seq_list_in_order[i])
-                    seq_counter += 1
-        check_tot = sum(normalised_seq_abund_list)
-
-        # here we have a fasta populated that we will use for running the MED
-        # now write it out, pad it, MED it
-        path_to_fasta_for_med = '{}/fasta_for_med.fasta'.format(sample_dir)
-        with open(path_to_fasta_for_med, 'w') as f:
-            for line in sample_fasta_for_MED:
-                f.write('{}\n'.format(line))
-
-        subprocess.run([r'o-pad-with-gaps', r'{}'.format(path_to_fasta_for_med)])
-
-        # Now run MED
-        listOfFiles = []
-        for (dirpath, dirnames, filenames) in os.walk(sample_dir):
-            listOfFiles.extend(filenames)
-            break
-        for file in listOfFiles:
-            if 'PADDED' in file:
-                pathToFile = '{}/{}'.format(sample_dir, file)
-                break
-        MEDOutDir = '{}/{}/'.format(sample_dir, 'MEDOUT')
-        os.makedirs(MEDOutDir, exist_ok=True)
-        sys.stdout.write('{}: running MED\n'.format(sample_name))
-        # Here we need to make sure that the M value is defined dynamically
-        # the M value is a cutoff that looks at the abundance of the most abundant unique sequence in a node
-        # if the abundance is lower than M then the node is discarded
-        # we have been working recently with an M that equivaltes to 0.4% of 0.004. This was
-        # calculated when working with a modelling project where I was subsampling to 1000 sequences. In this
-        # scenario the M was set to 4.
-        # We should also take care that M doesn't go below 4, so we should use a max choice for the M
-        M_value = max(4, int(0.004 * (len(sample_fasta_for_MED) / 2)))
-        subprocess.run(
-            [r'decompose', '-M', str(M_value), '--skip-gexf-files', '--skip-gen-figures', '--skip-gen-html',
-             '--skip-check-input', '-o', MEDOutDir, pathToFile])
-        sys.stdout.write('{}: MED complete\n'.format(sample_name))
-
-        # here the MED has been conducted and we can now read in the nodes and create a dict for the sample
-        # read in the node file
-        with open('{}/NODE-REPRESENTATIVES.fasta'.format(MEDOutDir), 'r') as f:
-            node_file = [line.rstrip() for line in f]
-
-        # get
-        sample_node_dict = {}
-        for i in range(0, len(node_file), 2):
-            sample_node_dict[node_file[i+1]] = int(node_file[i].split(':')[1])
-
-        # now do the rel abunds again and then pickle out
-        tot = sum(sample_node_dict.values())
-        sample_node_dict_rel_abund = {k: v/tot for k,v in sample_node_dict.items()}
-
-        pickle.dump(sample_node_dict_rel_abund, open('{}/sample_node_dict_rel_abund.pickle'.format(sample_dir), 'wb'))
-
-
-
-    return
-
-# TODO we should be able to delete all of these
-# This is a function to parse over the directory stucture that was on the TARA/Genescope ftp and create
-# an information dataframe
-# This method used the next three methods as well generate_info_collection_dict, create_sample_dict and
-# create_info_df_from_info_collection_dict
-def generate_info_df_for_samples():
-
-    if os.path.isfile('{}/info_df.pickle'.format(os.getcwd())):
-        info_df = pickle.load(open('{}/info_df.pickle'.format(os.getcwd()), 'rb'))
-    else:
-        tara_data_dir = '/home/humebc/projects/tara/18s_data/18S_V9_1389F_1510R'
-
-        # lets create a dict where the key will be the sample_name and the value will be dict with each of the above values
-        info_collection_dict = {}
-
-        # now lets parse through the directories using them to get some of the information facts above
-        generate_info_collection_dict(info_collection_dict, tara_data_dir)
-
-        # here we should have the info_collection_dict populated. We can now turn each of these into series and then
-        # add them to the info_df
-        columns_for_df = ['sample_name', 'fastq_fwd_file_path', 'fastq_rev_file_path', 'coral_plankton', 'spp_water', 'location', 'site', 'size_fraction']
-
-        info_df = create_info_df_from_info_collection_dict(columns_for_df, info_collection_dict)
-
-        pickle.dump(info_df, open('{}/info_df.pickle'.format(os.getcwd()), 'wb'))
-
-        # here we have a dataframe with all of the samples in it
-        # we can now move on to do the analysis of them.
-        # this hsould be done in a separate method
-    return info_df
-
-def generate_info_collection_dict(info_collection_dict, tara_data_dir):
-    for location in os.listdir(tara_data_dir):
-        if 'ISLAND' in location:
-            parsing_dir_loc = '{}/{}'.format(tara_data_dir, location)
-            for site in os.listdir(parsing_dir_loc):
-                parsing_dir_site = '{}/{}'.format(parsing_dir_loc, site)
-                for sample_type in os.listdir(parsing_dir_site):
-                    parsing_dir_sample_type = '{}/{}'.format(parsing_dir_site, sample_type)
-                    if sample_type == 'CORAL':
-                        for species in os.listdir(parsing_dir_sample_type):
-                            parsing_dir_species = '{}/{}'.format(parsing_dir_sample_type, species)
-                            for individual in os.listdir(parsing_dir_species):
-                                parsing_dir_indi = '{}/{}/CS4L'.format(parsing_dir_species, individual)
-                                # now we are in the directory that contains the actual paired fastq.gz files for a
-                                # given coral individual
-                                # collect the information we need
-                                create_sample_dict(location, parsing_dir_indi, sample_type, site,
-                                                                              species, info_collection_dict)
-
-                    elif sample_type == 'PLANKTON':
-                        for water_type in os.listdir(parsing_dir_sample_type):
-                            if water_type == 'CSW':
-                                parsing_dir_water_type = '{}/{}'.format(parsing_dir_sample_type, water_type)
-                                for individual in os.listdir(parsing_dir_water_type):
-                                    parsing_dir_indi = '{}/{}'.format(parsing_dir_water_type, individual)
-                                    for size_fraction_indi in os.listdir(parsing_dir_indi):
-                                        parsing_dir_indi_size = '{}/{}'.format(parsing_dir_indi, size_fraction_indi)
-                                        # now we are in the directory that contains the actual paired fastq.gz files for a
-                                        # given water sample
-
-                                        # collect the information we need
-                                        create_sample_dict(location, parsing_dir_indi_size, sample_type, site,
-                                                                                      water_type, info_collection_dict, size_fraction_indi)
-
-
-                            elif water_type == 'SURFACE':
-                                # then this is a SURFACE sample and there are no individuals
-                                parsing_dir_water_type = '{}/{}/S320'.format(parsing_dir_sample_type, water_type)
-
-                                # collect the information we need
-                                create_sample_dict(location, parsing_dir_water_type, sample_type, site, water_type, info_collection_dict, size_fraction_indi)
-
-
-        elif 'OA' in location:
-            parsing_dir_loc = '{}/{}/PLANKTON/SURFACE'.format(tara_data_dir, location)
-            for size_fraction_indi in os.listdir(parsing_dir_loc):
-                parsing_dir_indi = '{}/{}'.format(parsing_dir_loc, size_fraction_indi)
-
-                sample_name = os.listdir(parsing_dir_indi)[0].split('_')[0]
-                # FWD and REV PATHS
-                files = os.listdir(parsing_dir_indi)
-                if len(files) != 2:
-                    print('more than 2 files in individual\'s directory {}'.format(parsing_dir_indi))
-                    sys.exit(1)
-                fwd_found = False
-                rev_found = False
-                for file_name in files:
-                    if 'R1' in file_name:
-                        fwd_path = '{}/{}'.format(parsing_dir_indi, file_name)
-                        fwd_found = True
-                    elif 'R2' in file_name:
-                        rev_path = '{}/{}'.format(parsing_dir_indi, file_name)
-                        rev_found = True
-                # make sure that both the fwd and rev paths have been identified
-                if not fwd_found or not rev_found:
-                    print('fwd or rev read not found')
-                    sys.exit(1)
-                sample_dict = {'sample_name': sample_name,
-                               'fastq_fwd_file_path': fwd_path,
-                               'fastq_rev_file_path': rev_path,
-                               'coral_plankton': 'OA',
-                               'spp_water': 'PLANKTON',
-                               'location': location,
-                               'site': 'OA',
-                               'size_fraction': size_fraction_indi
-                               }
-                info_collection_dict[sample_name] = sample_dict
-    return
-
-def create_sample_dict(location, parsing_dir, sample_type, site, water_type, info_collection_dict, size_fraction='coral'):
-    # SAMPLE NAME
-    sample_name = os.listdir(parsing_dir)[0].split('_')[0]
-    # FWD and REV PATHS
-    files = os.listdir(parsing_dir)
-    if len(files) != 2:
-        print('mergin fastqs in {}'.format(parsing_dir))
-        # this method will merge the fastqs together so that 4 turn into 2.
-        merge_fastqs(files, parsing_dir)
-
-        # finally re-read in the files
-        files = os.listdir(parsing_dir)
-        if len(files) != 2:
-            print('we still gotta problem {}'.format(parsing_dir))
-            sys.exit(0)
-
-
-    fwd_found = False
-    rev_found = False
-    for file_name in files:
-        if 'R1' in file_name:
-            fwd_path = '{}/{}'.format(parsing_dir, file_name)
-            fwd_found = True
-        elif 'R2' in file_name:
-            rev_path = '{}/{}'.format(parsing_dir, file_name)
-            rev_found = True
-    # make sure that both the fwd and rev paths have been identified
-    if not fwd_found or not rev_found:
-        print('fwd or rev read not found')
-        sys.exit(1)
-    sample_dict = {'sample_name': sample_name,
-                   'fastq_fwd_file_path': fwd_path,
-                   'fastq_rev_file_path': rev_path,
-                   'coral_plankton': sample_type,
-                   'spp_water': water_type,
-                   'location': location,
-                   'site': site,
-                   'size_fraction': size_fraction}
-    info_collection_dict[sample_name] = sample_dict
-    return
-
-def merge_fastqs(files, parsing_dir):
-    # If we get here then there have been multiple sequencing runs for the same sample
-    # we will aim to simply merge the fastqs together insitu
-    # first get the name that we want to use (this is the one containing BG
-    one_found = False
-    two_found = False
-    for file_name in files:
-        if 'BG' in file_name and 'R1' in file_name:
-            R1_name = file_name
-            one_found = True
-        if 'BG' in file_name and 'R2' in file_name:
-            R2_name = file_name
-            two_found = True
-    if not one_found or not two_found:
-        # then this may be due to there not being a BG file
-        # so we just take the first name
-        for file_name in files:
-            if 'R1' in file_name:
-                R1_name = file_name
-                R2_name = file_name.replace('R1', 'R2')
-        print('couldnt find the right files {}'.format(parsing_dir))
-    # second unzip all of the files
-    for file_name in files:
-        subprocess.run(['gunzip', '{}/{}'.format(parsing_dir, file_name)])
-    # now we have all of the files unzipped
-    # now look at each of the files and add them to a master R1 and R2.
-    # it doesn't matter whether we add the R1 or R2 first. So long as we add the pair at the same time
-    un_files = os.listdir(parsing_dir)
-    master_fastq_R1 = []
-    master_fastq_R2 = []
-    for un_file in un_files:
-        # we should go into this if twice once for each pair
-        if 'R1' in un_file:
-            # then we can read this and its pair
-            rone_path = '{}/{}'.format(parsing_dir, un_file)
-            with open(rone_path, 'r') as f:
-                rone_file = [line.rstrip() for line in f]
-            master_fastq_R1.extend(rone_file)
-
-            # now do the same for the corresponing R2 file
-            rtwo_path = '{}/{}'.format(parsing_dir, un_file.replace('R1', 'R2'))
-            with open(rtwo_path, 'r') as f:
-                rtwo_file = [line.rstrip() for line in f]
-            master_fastq_R2.extend(rtwo_file)
-
-            # now delte the files
-            os.remove(rone_path)
-            os.remove(rtwo_path)
-    # here we have a master file for the R1 and R2. We can now write it out to the name that we have
-    rone_path_to_write = '{}/{}'.format(parsing_dir, R1_name.replace('.gz', ''))
-    with open(rone_path_to_write, 'w') as f:
-        for line in master_fastq_R1:
-            f.write('{}\n'.format(line))
-    rtwo_path_to_write = '{}/{}'.format(parsing_dir, R2_name.replace('.gz', ''))
-    with open(rtwo_path_to_write, 'w') as f:
-        for line in master_fastq_R2:
-            f.write('{}\n'.format(line))
-    # now we simply need to recompress the files
-    un_files = os.listdir(parsing_dir)
-    for un_file in un_files:
-        subprocess.run(['gzip', '{}/{}'.format(parsing_dir, un_file)])
-
-def create_info_df_from_info_collection_dict(columns_for_df, info_collection_dict):
-    series_list = []
-    for sample_key, sample_info_dict in info_collection_dict.items():
-        data_for_series = [sample_info_dict[ind] for ind in columns_for_df]
-        temp_series = pd.Series(data_for_series, index=columns_for_df, name=sample_key)
-        series_list.append(temp_series)
-    # now we can populate the info df using the series list
-    info_df = pd.DataFrame.from_items([(s.name, s) for s in series_list]).T
-    return info_df
-
 def get_colour_list():
     colour_list = ["#FFFF00", "#1CE6FF", "#FF34FF", "#FF4A46", "#008941", "#006FA6", "#A30059", "#FFDBE5",
                   "#7A4900", "#0000A6", "#63FFAC", "#B79762", "#004D43", "#8FB0FF", "#997D87", "#5A0007", "#809693",
@@ -1585,6 +682,10 @@ class EighteenSAnalysis:
         self.input_dir = os.path.join(self.root_dir, 'input')
         # This is the directory in which we will save the figure outputs
         self.figure_output_dir = os.path.join(self.root_dir, 'figures')
+        # This is the directory in which we will save the .dist files that will be used in
+        # calculating the PCoAs.
+        self.dist_output_dir = os.path.join(self.root_dir, 'dist')
+        os.makedirs(self.dist_output_dir, exist_ok=True)
         os.makedirs(self.figure_output_dir, exist_ok=True)
         os.makedirs(self.input_dir, exist_ok=True)
         os.makedirs(self.cache_dir,exist_ok=True)
@@ -1600,6 +701,499 @@ class EighteenSAnalysis:
         self.sample_order = pickle.load(open(os.path.join(self.input_dir, 'ordered_sample_names_from_its2_work.pickle'), 'rb'))
 
         self.blast_nt_db_path = '/home/humebc/phylogeneticSoftware/ncbi-blast-2.6.0+/ntdbdownload'
+
+
+    def plot_pcoa_spp(self, is_three_d=False):
+        """
+        This is the code for producing the 18s pcoa with either the 3rd and 4th PC underneath or a 3d graph.
+        """
+
+        # For each species, get the pcoa df
+        pcoa_df_dict = self._generate_bray_curtis_distance_and_pcoa_spp()
+
+        # setup figure
+        spp_list = ['Porites', 'Pocillopora', 'Millepora']
+        axarr = []
+        fig = plt.figure(figsize=(18, 10))
+
+        gs = plt.GridSpec(3, 6, figure=fig, width_ratios=[1, 0.2, 1, 0.2, 1, 0.5], height_ratios=[1, 0.2, 1])
+        for j in range(0, 3, 2):
+            for i in range(0, 5, 2):
+                if is_three_d:
+                    if j == 1:
+                        axarr.append(fig.add_subplot(gs[j, i], projection='3d'))
+                    else:
+                        axarr.append(plt.subplot(gs[j, i]))
+                else:
+                    axarr.append(plt.subplot(gs[j, i]))
+
+        legend_ax = plt.subplot(gs[:, 5])
+        self._remove_axes_but_allow_labels(legend_ax)
+        for spp in spp_list:
+
+            ax = axarr[spp_list.index(spp)]
+            ax_second = axarr[spp_list.index(spp) + 3]
+
+            df_of_spp = pcoa_df_dict[spp]
+
+            # x values
+            x_values = df_of_spp['PC1'].values.tolist()[:-1]
+
+            # y values
+            y_values = df_of_spp['PC2'].values.tolist()[:-1]
+
+            # z values
+            z_values = df_of_spp['PC3'].values.tolist()[:-1]
+
+            # pc4 values
+            pc4_values = df_of_spp['PC4'].values.tolist()[:-1]
+
+            samples_of_spp = df_of_spp.index.values.tolist()[:-1]
+            # get list of colours and list of markers
+            # colours can designate islands
+            colour_dict = {'SITE01': '#C0C0C0', 'SITE02': '#808080', 'SITE03': '#000000'}
+            colour_list = [colour_dict[self.coral_info_df_for_figures.loc[smp, 'site']] for smp in samples_of_spp]
+
+            # shapes can designate sites
+
+            marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
+            marker_list = [marker_dict[self.coral_info_df_for_figures.loc[smp, 'island']] for smp in samples_of_spp]
+
+            # plot the points
+            for x_val, y_val, col, mark in zip(x_values, y_values, colour_list, marker_list):
+                ax.scatter(x_val, y_val, c=col, marker=mark)
+
+            # add axes labels
+            ax.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp['PC1'][-1]))
+            ax.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp['PC2'][-1]))
+            # set axis title
+            ax.set_title('{}'.format(spp))
+            if is_three_d:
+                # then lets plot the 3d equivalent below the 3d figs
+                # plot the points
+                for x_val, y_val, z_val, col, mark in zip(x_values, y_values, z_values, colour_list, marker_list):
+                    ax_second.scatter(x_val, y_val, z_val, c=col, marker=mark)
+
+                # add axes labels
+                ax_second.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp['PC1'][-1]))
+                ax_second.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp['PC2'][-1]))
+                ax_second.set_zlabel('PC3; explained = {}'.format('%.3f' % df_of_spp['PC3'][-1]))
+
+
+            else:
+                # else lets just plot out the 3rd and 4th PCs below
+                # plot the points
+                for z_val, pc4_val, col, mark in zip(z_values, pc4_values, colour_list, marker_list):
+                    ax_second.scatter(z_val, pc4_val, c=col, marker=mark)
+
+                # add axes labels
+                ax_second.set_xlabel('PC3; explained = {}'.format('%.3f' % df_of_spp['PC3'][-1]))
+                ax_second.set_ylabel('PC4; explained = {}'.format('%.3f' % df_of_spp['PC4'][-1]))
+
+        # here we should put together the legend axis
+        self._vert_leg_axis(colour_dict, legend_ax, marker_dict)
+
+        fig.show()
+        if not is_three_d:
+            plt.savefig(os.path.join(self.figure_output_dir, 'spp_pcoa_with_pc3_pc4.png'), dpi=1200)
+            plt.savefig(os.path.join(self.figure_output_dir, 'spp_pcoa_with_pc3_pc4.svg'))
+
+
+    def plot_pcoa_spp_island(self):
+        """
+        This is the code for producing a pcoa per island per species.
+        """
+
+        # For each species get the pcoa df
+        pcoa_df_dict = self._generate_bray_curtis_distance_and_pcoa_spp_and_island()
+
+        # setup figure
+        spp_list = ['PORITES', 'POCILLOPORA', 'MILLEPORA']
+
+        island_list = ['ISLAND06', 'ISLAND10', 'ISLAND15']
+
+        axarr = []
+
+        fig = plt.figure(figsize=(18, 10))
+
+        gs = plt.GridSpec(5, 7, figure=fig, width_ratios=[1, 0.2, 1, 0.2, 1, 0.2, 0.5],
+                          height_ratios=[1, 0.2, 1, 0.2, 1])
+        for j in range(0, 5, 2):
+            for i in range(0, 5, 2):
+                axarr.append(plt.subplot(gs[j, i]))
+
+        legend_ax = plt.subplot(gs[:, 6])
+        self._remove_axes_but_allow_labels(legend_ax)
+        ax_count = 0
+        for spp in spp_list:
+            for island in island_list:
+
+                ax = axarr[ax_count]
+
+                df_of_spp_island = pcoa_df_dict['{}_{}'.format(spp, island)]
+
+                # x values
+                x_values = df_of_spp_island['PC1'].values.tolist()[:-1]
+
+                # y values
+                y_values = df_of_spp_island['PC2'].values.tolist()[:-1]
+
+                samples_of_spp = df_of_spp_island.index.values.tolist()[:-1]
+                # get list of colours and list of markers
+                # colours can designate islands
+                colour_dict = {'SITE01': '#C0C0C0', 'SITE02': '#808080', 'SITE03': '#000000'}
+                colour_list = [colour_dict[self.coral_info_df_for_figures.loc[smp, 'site']] for smp in samples_of_spp]
+
+                # shapes can designate sites
+
+                marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
+                marker_list = [marker_dict[self.coral_info_df_for_figures.loc[smp, 'island']] for smp in samples_of_spp]
+
+                # plot the points
+                for x_val, y_val, col, mark in zip(x_values, y_values, colour_list, marker_list):
+                    ax.scatter(x_val, y_val, c=col, marker=mark)
+
+                # add axes labels
+                ax.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp_island['PC1'][-1]))
+                ax.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp_island['PC2'][-1]))
+                # set axis title
+                if ax_count in [0, 1, 2]:
+                    ax.set_title('{}'.format(island), fontsize='large', fontweight='bold')
+                if ax_count in [2, 5, 8]:
+                    ax2 = ax.twinx()
+                    ax2.yaxis.set_ticklabels([])
+                    ax2.yaxis.set_ticks_position('none')
+                    ax2.set_ylabel(spp, fontsize='large', fontweight='bold')
+
+                ax_count += 1
+
+        # here we should put together the legend axis
+        self._vert_leg_axis(colour_dict, legend_ax, marker_dict)
+
+        fig.show()
+        plt.savefig(os.path.join(self.figure_output_dir, 'spp_island_pcoa.png'), dpi=1200)
+        plt.savefig(os.path.join(self.figure_output_dir, 'spp_island_pcoa.svg'))
+
+    def _generate_bray_curtis_distance_and_pcoa_spp_and_island(self):
+        """Read in the minor div dataframe which should have normalised abundances in them
+        # For each sample we have a fasta that we can read in which has the normalised (to 1000) sequences
+        # For feeding into med. We can use a default dict to collect the sequences and abundances from this fairly
+        # simply.
+        # This is likely best done on for each sample outside of the pairwise comparison to save on redoing the same
+        # collection of the sequences.
+        """
+
+        if os.path.isfile(os.path.join(self.cache_dir, 'minor_div_abundance_dict.p')):
+            minor_div_abundance_dict = pickle.load(
+                open(os.path.join(self.cache_dir, 'minor_div_abundance_dict.p'), 'rb'))
+
+        else:
+            minor_div_abundance_dict = self._generate_minor_div_abundance_dict_from_scratch()
+
+        # For each of the spp.
+        spp_island_pcoa_df_dict = {}
+        for spp in ['PORITES', 'POCILLOPORA', 'MILLEPORA']:
+            for island in ['ISLAND06', 'ISLAND10', 'ISLAND15']:
+                if os.path.isfile(os.path.join(self.cache_dir, f'spp_island_pcoa_df_{spp}_{island}.p')):
+                    spp_island_pcoa_df = pickle.load(
+                        open(os.path.join(self.cache_dir, f'spp_island_pcoa_df_{spp}_{island}.p'), 'rb'))
+                else:
+                    # Get a list of the samples that we should be working with
+                    sample_names_of_spp = self.coral_info_df_for_figures.loc[
+                        (self.coral_info_df_for_figures['genus'] == spp.upper()) &
+                        (self.coral_info_df_for_figures['island'] == island.upper())].index.values.tolist()
+
+                    # Remove the two porites species from this that seem to be total outliers
+                    if spp == 'PORITES':
+                        if 'CO0001674' in sample_names_of_spp:
+                            sample_names_of_spp.remove('CO0001674')
+                            sample_names_of_spp.remove('CO0001669')
+
+                    spp_island_distance_dict = self._get_spp_island_distance_dict(minor_div_abundance_dict,
+                                                                                  sample_names_of_spp)
+
+                    distance_out_file = self._make_and_output_distance_file_spp_island(sample_names_of_spp,
+                                                                                       spp_island_distance_dict)
+
+                    # Feed this into the generate_PCoA_coords method
+                    spp_island_pcoa_df = self._generate_PCoA_coords(distance_out_file, spp)
+                    pickle.dump(spp_island_pcoa_df,
+                                open(os.path.join(self.cache_dir, f'spp_island_pcoa_df_{spp}_{island}.pickle'), 'wb'))
+                spp_island_pcoa_df_dict['{}_{}'.format(spp, island)] = spp_island_pcoa_df
+        return spp_island_pcoa_df_dict
+
+    def _make_and_output_distance_file_spp_island(self, sample_names_of_spp, spp_island_distance_dict):
+        # Generate the distance out file from this dictionary
+        # from this dict we can produce the distance file that can be passed into the generate_PCoA_coords method
+        distance_out_file = [len(sample_names_of_spp)]
+        for sample_outer in sample_names_of_spp:
+            # The list that will hold the line of distance. This line starts with the name of the sample
+            temp_sample_dist_string = [sample_outer]
+
+            for sample_inner in sample_names_of_spp:
+                if sample_outer == sample_inner:
+                    temp_sample_dist_string.append(0)
+                else:
+                    temp_sample_dist_string.append(spp_island_distance_dict[
+                                                       '{}_{}'.format(sample_outer, sample_inner)])
+            distance_out_file.append(
+                '\t'.join([str(distance_item) for distance_item in temp_sample_dist_string]))
+        # from here we can hopefully rely on the rest of the methods as they already are. The .dist file should be
+        # written out
+        dist_out_path = os.path.join \
+            (self.dist_output_dir, f'bray_curtis_within_spp_island_sample_distances_{spp}_{island}.dist')
+        with open(dist_out_path, 'w') as f:
+            for line in distance_out_file:
+                f.write('{}\n'.format(line))
+        return distance_out_file
+
+    def _get_spp_island_distance_dict(self, minor_div_abundance_dict, sample_names_of_spp):
+        if os.path.isfile(os.path.join(self.cache_dir, f'spp_island_distance_dict_{spp}_{island}.p')):
+            spp_island_distance_dict = pickle.load(
+                open(os.path.join(self.cache_dir, f'spp_island_distance_dict_{spp}_{island}.p'), 'rb'))
+
+        else:
+            spp_island_distance_dict = self._generate_spp_island_distance_dict_from_scratch(
+                minor_div_abundance_dict, sample_names_of_spp)
+        return spp_island_distance_dict
+
+    def _generate_spp_island_distance_dict_from_scratch(self, minor_div_abundance_dict, sample_names_of_spp):
+        # Create a dictionary that will hold the distance between the two samples
+        spp_island_distance_dict = {}
+        # For pairwise comparison of each of these sequences
+        for smp_one, smp_two in itertools.combinations(sample_names_of_spp, 2):
+            print('Calculating distance for {}_{}'.format(smp_one, smp_two))
+            # Get a set of the sequences found in either one of the samples
+            smp_one_abund_dict = minor_div_abundance_dict[smp_one]
+            smp_two_abund_dict = minor_div_abundance_dict[smp_two]
+            list_of_seqs_of_pair = []
+            list_of_seqs_of_pair.extend(list(smp_one_abund_dict.keys()))
+            list_of_seqs_of_pair.extend(list(smp_two_abund_dict.keys()))
+            list_of_seqs_of_pair = list(set(list_of_seqs_of_pair))
+
+            # then create a list of abundances for sample one by going through the above list and checking
+            sample_one_abundance_list = []
+            for seq_name in list_of_seqs_of_pair:
+                if seq_name in smp_one_abund_dict.keys():
+                    sample_one_abundance_list.append(smp_one_abund_dict[seq_name])
+                else:
+                    sample_one_abundance_list.append(0)
+
+            # then create a list of abundances for sample two by going through the above list and checking
+            sample_two_abundance_list = []
+            for seq_name in list_of_seqs_of_pair:
+                if seq_name in smp_two_abund_dict.keys():
+                    sample_two_abundance_list.append(smp_two_abund_dict[seq_name])
+                else:
+                    sample_two_abundance_list.append(0)
+
+            # Do the Bray Curtis.
+            distance = braycurtis(sample_one_abundance_list, sample_two_abundance_list)
+
+            # Add the distance to the dictionary using both combinations of the sample names
+            spp_island_distance_dict['{}_{}'.format(smp_one, smp_two)] = distance
+            spp_island_distance_dict['{}_{}'.format(smp_two, smp_one)] = distance
+        # doing this takes a bit of time so let's pickle it out
+        pickle.dump(
+            spp_island_distance_dict,
+            open(os.path.join(self.cache_dir, f'spp_island_distance_dict_{spp}_{island}.p'), 'wb'))
+        return spp_island_distance_dict
+
+    def _vert_leg_axis(self, colour_dict, legend_ax, marker_dict):
+        legend_ax.set_ylim(0, 1)
+        legend_ax.set_xlim(0, 1)
+        legend_ax.invert_yaxis()
+        number_of_icons = 6
+        island_list = ['ISLAND06', 'ISLAND10', 'ISLAND15']
+        site_list = ['SITE01', 'SITE02', 'SITE03']
+        icon_list = []
+        # first populate the island icons
+        for site in site_list:
+            icon_list.append((colour_dict[site], marker_dict['ISLAND06']))
+        # then populate the site icons
+        for island in island_list:
+            icon_list.append((colour_dict['SITE01'], marker_dict[island]))
+        # lets assume that the axis is divided into 20 spaces for icons
+        max_number_icons = 20
+        # the  icon position should be mid way so max_number_icons
+        # first icon position
+        first_icon_position = int((max_number_icons - number_of_icons) / 2)
+        pos_counter = first_icon_position
+        for i in range(len(icon_list)):
+            y_val_for_icon_and_text = (1 / max_number_icons) * pos_counter
+            x_val_for_icon = 0.1
+            x_val_for_text = x_val_for_icon + 0.2
+            legend_ax.scatter(x=x_val_for_icon, y=y_val_for_icon_and_text, c=icon_list[i][0], marker=icon_list[i][1],
+                              s=100)
+
+            if int(i / 3) == 0:
+                legend_ax.text(s=site_list[i], x=x_val_for_text, y=y_val_for_icon_and_text)
+            elif int(i / 3) == 1:
+                legend_ax.text(s=island_list[i % 3], x=x_val_for_text, y=y_val_for_icon_and_text)
+            pos_counter += 1
+
+    def _generate_bray_curtis_distance_and_pcoa_spp(self):
+        """
+        This is code for generating PCOAs for each of the coral species.
+        Read in the minor div dataframe which should have normalised abundances in them
+        For each sample we have a fasta that we can read in which has the normalised (to 1000) sequences
+        For feeding into med. We can use a default dict to collect the sequences and abundances from this fairly
+        simply.
+        This is likely best done on for each sample outside of the pairwise comparison to save on redoing the same
+        collection of the sequences.
+        """
+
+        if os.path.isfile(os.path.join(self.cache_dir, 'minor_div_abundance_dict.p')):
+            minor_div_abundance_dict = pickle.load(
+                open(os.path.join(self.cache_dir, 'minor_div_abundance_dict.p'), 'rb'))
+
+        else:
+            minor_div_abundance_dict = self._generate_minor_div_abundance_dict_from_scratch()
+
+        # For each of the spp.
+        spp_pcoa_df_dict = {}
+        for spp in ['Porites', 'Pocillopora', 'Millepora']:
+            if os.path.isfile(os.path.join(self.cache_dir, f'spp_pcoa_df_{spp}.p')):
+                spp_pcoa_df = pickle.load(open(os.path.join(self.cache_dir, f'spp_pcoa_df_{spp}.p'), 'rb'))
+            else:
+                # Get a list of the samples that we should be working with
+                sample_names_of_spp = self.coral_info_df_for_figures.loc[
+                    self.coral_info_df_for_figures['genus'] == spp.upper()].index.values.tolist()
+
+                # remove the two porites species form this that seem to be total outliers
+                if spp == 'Porites':
+                    sample_names_of_spp.remove('CO0001674')
+                    sample_names_of_spp.remove('CO0001669')
+
+                spp_distance_dict = self._get_spp_sample_distance_dict(minor_div_abundance_dict, sample_names_of_spp)
+
+                distance_out_file = self._make_and_write_out_spp_dist_file(sample_names_of_spp, spp_distance_dict)
+
+                # Feed this into the generate_PCoA_coords method
+                spp_pcoa_df = self._generate_PCoA_coords(distance_out_file, spp)
+                pickle.dump(spp_pcoa_df, open(os.path.join(self.cache_dir, f'spp_pcoa_df_{spp}.p'), 'wb'))
+            spp_pcoa_df_dict[spp] = spp_pcoa_df
+        return spp_pcoa_df_dict
+
+    def _generate_PCoA_coords(self, raw_dist_file, spp):
+        # simultaneously grab the sample names in the order of the distance matrix and put the matrix into
+        # a twoD list and then convert to a numpy array
+        temp_two_D_list = []
+        sample_names_from_dist_matrix = []
+        for line in raw_dist_file[1:]:
+            temp_elements = line.split('\t')
+            sample_names_from_dist_matrix.append(temp_elements[0])
+            temp_two_D_list.append([float(a) for a in temp_elements[1:]])
+        uni_frac_dist_array = np.array(temp_two_D_list)
+        sys.stdout.write('\rcalculating PCoA coordinates')
+        pcoA_full_path = '{}/pcoa_coords_{}.csv'.format(os.getcwd(), spp)
+        pcoa_df = pcoa(uni_frac_dist_array)
+
+        # rename the dataframe index as the sample names
+        pcoa_df.samples['sample'] = sample_names_from_dist_matrix
+        renamed_dataframe = pcoa_df.samples.set_index('sample')
+
+        # now add the variance explained as a final row to the renamed_dataframe
+
+        renamed_dataframe = renamed_dataframe.append(pcoa_df.proportion_explained.rename('proportion_explained'))
+
+        return renamed_dataframe
+
+    def _make_and_write_out_spp_dist_file(self, sample_names_of_spp, spp_distance_dict):
+        # Generate the distance out file from this dictionary
+        # from this dict we can produce the distance file that can be passed into the generate_PCoA_coords method
+        distance_out_file = [len(sample_names_of_spp)]
+        for sample_outer in sample_names_of_spp:
+            # The list that will hold the line of distance. This line starts with the name of the sample
+            temp_sample_dist_string = [sample_outer]
+
+            for sample_inner in sample_names_of_spp:
+                if sample_outer == sample_inner:
+                    temp_sample_dist_string.append(0)
+                else:
+                    temp_sample_dist_string.append(spp_distance_dict[
+                                                       '{}_{}'.format(sample_outer, sample_inner)])
+            distance_out_file.append(
+                '\t'.join([str(distance_item) for distance_item in temp_sample_dist_string]))
+        # from here we can hopefully rely on the rest of the methods as they already are. The .dist file should be
+        # written out
+        dist_out_path = os.path.join(self.dist_output_dir, f'bray_curtis_within_spp_sample_distances_{spp}.dist')
+        with open(dist_out_path, 'w') as f:
+            for line in distance_out_file:
+                f.write('{}\n'.format(line))
+        return distance_out_file
+
+    def _get_spp_sample_distance_dict(self, minor_div_abundance_dict, sample_names_of_spp):
+        if os.path.isfile(os.path.join(self.cache_dir, f'spp_distance_dict_{spp}.p')):
+            spp_distance_dict = pickle.load(
+                open(os.path.join(self.cache_dir, f'spp_distance_dict_{spp}.p'), 'rb'))
+
+        else:
+            spp_distance_dict = self._make_spp_sample_distance_dict_from_scratch(
+                minor_div_abundance_dict, sample_names_of_spp)
+        return spp_distance_dict
+
+    def _make_spp_sample_distance_dict_from_scratch(self, minor_div_abundance_dict, sample_names_of_spp):
+        # Create a dictionary that will hold the distance between the two samples
+        spp_distance_dict = {}
+        # For pairwise comparison of each of these sequences
+        for smp_one, smp_two in itertools.combinations(sample_names_of_spp, 2):
+            print('Calculating distance for {}_{}'.format(smp_one, smp_two))
+            # Get a set of the sequences found in either one of the samples
+            smp_one_abund_dict = minor_div_abundance_dict[smp_one]
+            smp_two_abund_dict = minor_div_abundance_dict[smp_two]
+            list_of_seqs_of_pair = []
+            list_of_seqs_of_pair.extend(list(smp_one_abund_dict.keys()))
+            list_of_seqs_of_pair.extend(list(smp_two_abund_dict.keys()))
+            list_of_seqs_of_pair = list(set(list_of_seqs_of_pair))
+
+            # then create a list of abundances for sample one by going through the above list and checking
+            sample_one_abundance_list = []
+            for seq_name in list_of_seqs_of_pair:
+                if seq_name in smp_one_abund_dict.keys():
+                    sample_one_abundance_list.append(smp_one_abund_dict[seq_name])
+                else:
+                    sample_one_abundance_list.append(0)
+
+            # then create a list of abundances for sample two by going through the above list and checking
+            sample_two_abundance_list = []
+            for seq_name in list_of_seqs_of_pair:
+                if seq_name in smp_two_abund_dict.keys():
+                    sample_two_abundance_list.append(smp_two_abund_dict[seq_name])
+                else:
+                    sample_two_abundance_list.append(0)
+
+            # Do the Bray Curtis.
+            distance = braycurtis(sample_one_abundance_list, sample_two_abundance_list)
+
+            # Add the distance to the dictionary using both combinations of the sample names
+            spp_distance_dict['{}_{}'.format(smp_one, smp_two)] = distance
+            spp_distance_dict['{}_{}'.format(smp_two, smp_one)] = distance
+        # doing this takes a bit of time so let's pickle it out
+        pickle.dump(spp_distance_dict,
+                    open(os.path.join(self.cache_dir, f'spp_distance_dict_{spp}.p'), 'wb'))
+        return spp_distance_dict
+
+    def _generate_minor_div_abundance_dict_from_scratch(self):
+        # this dict will have sample name as key and then a dict as value with seq to abundance values
+        # we can then work with this for the pairwise comparison
+        minor_div_abundance_dict = {}
+        for ind in self.coral_info_df_for_figures.index.values.tolist():
+            sample_dir = self.coral_info_df_for_figures.loc[ind, 'sample_dir']
+            with open('{}/fasta_for_med.fasta'.format(sample_dir), 'r') as f:
+                sample_fasta = [line.rstrip() for line in f]
+
+            sample_minor_abundance_dict = defaultdict(int)
+            for i in range(0, len(sample_fasta), 2):
+                sample_minor_abundance_dict[sample_fasta[i + 1]] += 1
+
+            # here we have the dict popoulated for the sample
+            # we can now add this to the minor_div_abundace_dict
+            minor_div_abundance_dict[ind] = sample_minor_abundance_dict
+        # we should now pickle out this sample_minor_abundance_dict
+        pickle.dump(
+            minor_div_abundance_dict, open(os.path.join(self.cache_dir, 'minor_div_abundance_dict.p'), 'wb'))
+        return minor_div_abundance_dict
 
     def identify_taxa_of_seqs_in_coral_samples(self, numProc=20):
         """The sequence_QC method has taken care of the basic mothur qc for us. The next step will be to run a blast
@@ -1634,7 +1228,7 @@ class EighteenSAnalysis:
 
         all_procs = []
         for n in range(numProc):
-            p = Process(target=blast_worker, args=(input_q_for_blast, node_dict, name_dict))
+            p = Process(target=self._blast_worker, args=(input_q_for_blast, node_dict, name_dict))
             all_procs.append(p)
             p.start()
 
@@ -1829,6 +1423,13 @@ class EighteenSAnalysis:
 
         seq_stacked_bar_plotter.plot()
 
+    def _remove_axes_but_allow_labels(self, ax, x_tick_label_list=None):
+        ax.set_frame_on(False)
+        if not x_tick_label_list:
+            ax.set_xticks([])
+        ax.set_yticks([])
+        ax.minorticks_off()
+
     class SeqStackedBarPlotter():
         """This method produced stacked bar charts. It can produce different charts depending on the plot_type.
         'full' means all of the sequences including the maj
@@ -1917,13 +1518,6 @@ class EighteenSAnalysis:
             elif self.plot_type == 'qc_absolute':
                 plt.savefig(os.path.join(self.parent.figure_output_dir, 'post_qc_absolute.png'))
                 plt.savefig(os.path.join(self.parent.figure_output_dir, 'post_qc_absolute.svg'))
-
-        def _remove_axes_but_allow_labels(ax, x_tick_label_list=None):
-            ax.set_frame_on(False)
-            if not x_tick_label_list:
-                ax.set_xticks([])
-            ax.set_yticks([])
-            ax.minorticks_off()
 
         def _create_med_node_sample_abundance_df_for_minor_intras(self):
             """
@@ -2292,7 +1886,7 @@ class EighteenSAnalysis:
                     ax.spines['right'].set_visible(False)
 
             else:
-                self._remove_axes_but_allow_labels(ax, x_tick_label_list)
+                self.parent._remove_axes_but_allow_labels(ax, x_tick_label_list)
 
             # as well as getting rid of the top and right axis splines
             # I'd also like to restrict the bottom spine to where there are samples plotted but also
@@ -2305,14 +1899,7 @@ class EighteenSAnalysis:
             elif self.plot_type == 'qc_absolute':
                 ax.add_line(Line2D((0 - 0.5, num_smp_in_this_subplot - 0.5), (0.1, 0.1), linewidth=2, color='black'))
 
-        def _remove_axes_but_allow_labels(self, ax, x_tick_label_list=None):
-            ax.set_frame_on(False)
-            if not x_tick_label_list:
-                ax.set_xticks([])
-            ax.set_yticks([])
-            ax.minorticks_off()
-
-        def _add_labels(ax_list):
+        def _add_labels(self, ax_list):
             ax_list[1].set_title('ISLAND06')
             ax_list[4].set_title('ISLAND10')
             ax_list[7].set_title('ISLAND15')
@@ -3084,4 +2671,6 @@ eighteen_s_analysis = EighteenSAnalysis()
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_taxa_rel_abund')
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_absolute')
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='med')
+# eighteen_s_analysis.plot_pcoa_spp()
+# eighteen_s_analysis.plot_pcoa_spp_island()
 
