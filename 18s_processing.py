@@ -1324,7 +1324,7 @@ def MED_worker(input_q):
 # in each sample.
 def generate_fig(plot_type):
     # this is the sample order from the its2 work
-    sample_order = pickle.load(open('ordered_sample_names_from_its2_work.pickle', 'rb'))
+    # sample_order = pickle.load(open('ordered_sample_names_from_its2_work.pickle', 'rb'))
     # to do this we'll have to read this in from the its2 work.
     # plot_type should be either 'full', 'low', or 'med'
     # full means all of the sequences including the maj
@@ -2681,11 +2681,10 @@ def get_colour_list():
                   "#545C46", "#866097", "#365D25", "#252F99", "#00CCFF", "#674E60", "#FC009C", "#92896B"]
     return colour_list
 
-generate_fig('full')
+# generate_fig('full')
 
 class EighteenSAnalysis:
-    def __init(self, plot_type):
-
+    def __init__(self):
         self.root_dir = os.path.abspath(os.path.dirname(__file__))
         self.data_root_dir = os.path.join(self.root_dir, '18S_V9_1389F_1510R')
         # This is the directory where we will pickle out objects to create caches of them
@@ -3040,7 +3039,7 @@ class EighteenSAnalysis:
             most abundant sequenecs first.
             """
 
-            if os.path.isfile(os.path.join(self.parent.cache_dir, 'sample_abundance_df.p')):
+            if os.path.isfile(os.path.join(self.parent.cache_dir, 'sample_abundance_Tdf.p')):
                 sample_abundance_df = pd.read_pickle(os.path.join(self.parent.cache_dir, 'sample_abundance_df.p'))
             else:
                 input_q = Queue()
@@ -3298,8 +3297,10 @@ class EighteenSAnalysis:
         This information will be gathered by parsing the directory
         structure that the fastq sequencing files are housed in
         """
-        if os.path.isfile(os.path.join(self.cache_dir, 'info_df.p')):
-            return pickle.load(open(os.path.join(self.cache_dir, 'all_samples_info_df.p'), 'rb'))
+        if os.path.isfile(os.path.join(self.cache_dir, 'all_samples_info_df.p')):
+            self.all_samples_info_df = pickle.load(open(os.path.join(self.cache_dir, 'all_samples_info_df.p'), 'rb'))
+            self.coral_info_df_for_figures = pickle.load(
+                open(os.path.join(self.cache_dir, 'coral_info_df_for_figures.p'), 'rb'))
         else:
             columns_for_df = ['sample_name', 'fastq_fwd_file_path', 'fastq_rev_file_path', 'coral_plankton',
                               'spp_water', 'location', 'site', 'size_fraction']
@@ -3317,7 +3318,8 @@ class EighteenSAnalysis:
 
     def _generate_coral_info_df_for_figures_from_all_sample_info_df(self):
         if os.path.isfile(os.path.join(self.cache_dir, 'coral_info_df_for_figures.p')):
-            return pickle.load(open('{}/fig_info_df.pickle'.format(os.getcwd()), 'rb'))
+            self.coral_info_df_for_figures = pickle.load(
+                open(os.path.join(self.cache_dir, 'coral_info_df_for_figures.p'), 'rb'))
         else:
             self.coral_info_df_for_figures = pd.DataFrame(columns=['island', 'site', 'genus', 'individual', 'sample_dir'])
             for ind in self.all_samples_info_df.index.values.tolist():
@@ -3338,6 +3340,7 @@ class EighteenSAnalysis:
         """Parse through the directory strucutre that holds the fastq files to get
         the sample infomation and populate the info_df """
         for location in os.listdir(self.data_root_dir):
+            print(f'Parsing directory strucutre for {location}')
             info_dir_parser = self.InfoDirectoryParser(parent=self, location=location)
             info_dir_parser.parse()
 
@@ -3368,6 +3371,10 @@ class EighteenSAnalysis:
                 self.sample_type = 'OA'
                 self.site = 'OA'
                 self._populate_info_df_sample_row()
+                self._set_current_dir_up_one_dir()
+
+        def _set_current_dir_up_one_dir(self):
+            self.current_dir = '/'.join(self.current_dir.split('/')[:-1])
 
         def _parse_island_directory(self):
             self.current_dir = os.path.join(self.parent.data_root_dir, self.location)
@@ -3384,6 +3391,8 @@ class EighteenSAnalysis:
 
                     elif sample_type == 'PLANKTON':
                         self._parse_plankton_directory()
+                self._set_current_dir_up_one_dir()
+            self._set_current_dir_up_one_dir()
 
         def _parse_plankton_directory(self):
             for water_type in os.listdir(self.current_dir):
@@ -3392,6 +3401,7 @@ class EighteenSAnalysis:
                     self._parse_csw_directory()
                 elif water_type == 'SURFACE':
                     self._parse_surface_directory()
+            self._set_current_dir_up_one_dir()
 
         def _parse_surface_directory(self):
             # then this is a SURFACE sample and there are no individuals
@@ -3399,6 +3409,8 @@ class EighteenSAnalysis:
             self.current_dir = os.path.join(self.current_dir, self.spp_water, self.size_fraction)
             # collect the information we need
             self._populate_info_df_sample_row()
+            self._set_current_dir_up_one_dir()
+            self._set_current_dir_up_one_dir()
 
         def _parse_csw_directory(self):
             self.current_dir = os.path.join(self.current_dir, self.spp_water)
@@ -3410,6 +3422,9 @@ class EighteenSAnalysis:
                     # now we are in the directory that contains the actual paired fastq.gz files for a
                     # given water sample
                     self._populate_info_df_sample_row()
+                    self._set_current_dir_up_one_dir()
+                self._set_current_dir_up_one_dir()
+            self._set_current_dir_up_one_dir()
 
         def _parse_coral_directory(self):
             for species in os.listdir(self.current_dir):
@@ -3422,26 +3437,30 @@ class EighteenSAnalysis:
                     # given coral individual
                     # collect the information we need
                     self._populate_info_df_sample_row()
+                    self._set_current_dir_up_one_dir()
+                    self._set_current_dir_up_one_dir()
+                self._set_current_dir_up_one_dir()
+            self._set_current_dir_up_one_dir()
 
         def _populate_info_df_sample_row(self):
 
-            sample_name = os.listdir(self.current_dir)[0].split('_')[0]
+            sample_name = [file for file in os.listdir(self.current_dir) if 'fastq.gz' in file][0].split('_')[0]
 
             fwd_path, rev_path = self._get_fwd_and_rev_fastq_paths()
 
             temp_dict = {
-                'fastq_fwd_file_path': fwd_path, 'fastq_rev_file_path': rev_path, 'coral_plankton': self.sample_type,
-                'spp_water': self.spp_water, 'location': self.location, 'site': self.site, 'size_fraction': self.size_fraction
+                'sample_name':sample_name ,'fastq_fwd_file_path': fwd_path, 'fastq_rev_file_path': rev_path,
+                'coral_plankton': self.sample_type, 'spp_water': self.spp_water, 'location': self.location,
+                'site': self.site, 'size_fraction': self.size_fraction
             }
 
             temp_series = pd.Series(data=temp_dict, name=sample_name)
-
-            self.info_df = self.info_df.append(temp_series)
+            self.parent.all_samples_info_df = self.parent.all_samples_info_df.append(temp_series)
 
         def _get_fwd_and_rev_fastq_paths(self):
-            files = os.listdir(self.current_dir)
-            files = self._marge_fastq_files_if_more_than_two_exist(files)
-            fwd_path, rev_path = self._infer_fastq_paths(files)
+            fastq_files = [file for file in os.listdir(self.current_dir) if 'fastq.gz' in file]
+            fastq_files = self._marge_fastq_files_if_more_than_two_exist(fastq_files)
+            fwd_path, rev_path = self._infer_fastq_paths(fastq_files)
             return fwd_path, rev_path
 
         def _infer_fastq_paths(self, files):
@@ -3538,3 +3557,6 @@ class EighteenSAnalysis:
             un_files = os.listdir(self.current_dir)
             for un_file in un_files:
                 subprocess.run(['gzip', '{}/{}'.format(self.current_dir, un_file)])
+
+eighteen_s_analysis = EighteenSAnalysis()
+eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='full')
