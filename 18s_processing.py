@@ -22,7 +22,6 @@ from scipy.spatial.distance import braycurtis
 from skbio.stats.ordination import pcoa
 from mpl_toolkits.mplot3d import Axes3D
 from plumbum import local
-import cropping
 
 
 
@@ -548,7 +547,618 @@ class EighteenSAnalysis:
 
         self.blast_nt_db_path = '/home/humebc/phylogeneticSoftware/ncbi-blast-2.6.0+/ntdbdownload'
 
+        self.symportal_seq_output_relative_path = '/home/humebc/projects/tara/initial_its2_processing/2018-10-21_08-59-37.620726.DIVs.relative.txt'
+        self.symportal_profile_output_relative_path = '/home/humebc/projects/tara/initial_its2_processing/34_init_tara_standalone_all_samps_151018_2018-10-21_08-45-56.507454.profiles.relative.txt'
 
+    class Generic_PCOA_DIST_Methods:
+        """A class that will hold all of the methods that are required by the various PCoA-plotting classes"""
+        def __init__(self, parent):
+            self.parent = parent
+
+        def _generate_bray_curtis_distance_and_pcoa_spp(self):
+            """
+            This is code for generating PCOAs for each of the coral species.
+            Read in the minor div dataframe which should have normalised abundances in them
+            For each sample we have a fasta that we can read in which has the normalised (to 1000) sequences
+            For feeding into med. We can use a default dict to collect the sequences and abundances from this fairly
+            simply.
+            This is likely best done on for each sample outside of the pairwise comparison to save on redoing the same
+            collection of the sequences.
+            """
+
+            if os.path.isfile(os.path.join(self.parent.cache_dir, 'minor_div_abundance_dict.p')):
+                minor_div_abundance_dict = pickle.load(
+                    open(os.path.join(self.parent.cache_dir, 'minor_div_abundance_dict.p'), 'rb'))
+
+            else:
+                minor_div_abundance_dict = self._generate_minor_div_abundance_dict_from_scratch()
+
+            # For each of the spp.
+            spp_pcoa_df_dict = {}
+            for spp in ['Porites', 'Pocillopora', 'Millepora']:
+                if os.path.isfile(os.path.join(self.parent.cache_dir, f'spp_pcoa_df_{spp}.p')):
+                    spp_pcoa_df = pickle.load(open(os.path.join(self.parent.cache_dir, f'spp_pcoa_df_{spp}.p'), 'rb'))
+                else:
+                    # Get a list of the samples that we should be working with
+                    sample_names_of_spp = self.parent.coral_info_df_for_figures.loc[
+                        self.parent.coral_info_df_for_figures['genus'] == spp.upper()].index.values.tolist()
+
+                    # remove the two porites species form this that seem to be total outliers
+                    if spp == 'Porites':
+                        sample_names_of_spp.remove('CO0001674')
+                        sample_names_of_spp.remove('CO0001669')
+
+                    spp_distance_dict = self._get_spp_sample_distance_dict(minor_div_abundance_dict,
+                                                                           sample_names_of_spp)
+
+                    distance_out_file = self._make_and_write_out_spp_dist_file(sample_names_of_spp, spp_distance_dict)
+
+                    # Feed this into the generate_PCoA_coords method
+                    spp_pcoa_df = self._generate_PCoA_coords(distance_out_file, spp)
+                    pickle.dump(spp_pcoa_df, open(os.path.join(self.parent.cache_dir, f'spp_pcoa_df_{spp}.p'), 'wb'))
+                spp_pcoa_df_dict[spp] = spp_pcoa_df
+            return spp_pcoa_df_dict
+
+        def _generate_PCoA_coords(self, raw_dist_file, spp):
+            # simultaneously grab the sample names in the order of the distance matrix and put the matrix into
+            # a twoD list and then convert to a numpy array
+            temp_two_D_list = []
+            sample_names_from_dist_matrix = []
+            for line in raw_dist_file[1:]:
+                temp_elements = line.split('\t')
+                sample_names_from_dist_matrix.append(temp_elements[0])
+                temp_two_D_list.append([float(a) for a in temp_elements[1:]])
+            uni_frac_dist_array = np.array(temp_two_D_list)
+            sys.stdout.write('\rcalculating PCoA coordinates')
+            pcoA_full_path = '{}/pcoa_coords_{}.csv'.format(os.getcwd(), spp)
+            pcoa_df = pcoa(uni_frac_dist_array)
+
+            # rename the dataframe index as the sample names
+            pcoa_df.samples['sample'] = sample_names_from_dist_matrix
+            renamed_dataframe = pcoa_df.samples.set_index('sample')
+
+            # now add the variance explained as a final row to the renamed_dataframe
+
+            renamed_dataframe = renamed_dataframe.append(pcoa_df.proportion_explained.rename('proportion_explained'))
+
+            return renamed_dataframe
+
+        def _generate_minor_div_abundance_dict_from_scratch(self):
+            # this dict will have sample name as key and then a dict as value with seq to abundance values
+            # we can then work with this for the pairwise comparison
+            minor_div_abundance_dict = {}
+            for ind in self.parent.coral_info_df_for_figures.index.values.tolist():
+                sample_dir = self.parent.coral_info_df_for_figures.loc[ind, 'sample_dir']
+                with open('{}/fasta_for_med.fasta'.format(sample_dir), 'r') as f:
+                    sample_fasta = [line.rstrip() for line in f]
+
+                sample_minor_abundance_dict = defaultdict(int)
+                for i in range(0, len(sample_fasta), 2):
+                    sample_minor_abundance_dict[sample_fasta[i + 1]] += 1
+
+                # here we have the dict popoulated for the sample
+                # we can now add this to the minor_div_abundace_dict
+                minor_div_abundance_dict[ind] = sample_minor_abundance_dict
+            # we should now pickle out this sample_minor_abundance_dict
+            pickle.dump(
+                minor_div_abundance_dict, open(os.path.join(self.parent.cache_dir, 'minor_div_abundance_dict.p'), 'wb'))
+            return minor_div_abundance_dict
+
+        def _make_and_write_out_spp_dist_file(self, sample_names_of_spp, spp_distance_dict):
+            # Generate the distance out file from this dictionary
+            # from this dict we can produce the distance file that can be passed into the generate_PCoA_coords method
+            distance_out_file = [len(sample_names_of_spp)]
+            for sample_outer in sample_names_of_spp:
+                # The list that will hold the line of distance. This line starts with the name of the sample
+                temp_sample_dist_string = [sample_outer]
+
+                for sample_inner in sample_names_of_spp:
+                    if sample_outer == sample_inner:
+                        temp_sample_dist_string.append(0)
+                    else:
+                        temp_sample_dist_string.append(spp_distance_dict[
+                                                           '{}_{}'.format(sample_outer, sample_inner)])
+                distance_out_file.append(
+                    '\t'.join([str(distance_item) for distance_item in temp_sample_dist_string]))
+            # from here we can hopefully rely on the rest of the methods as they already are. The .dist file should be
+            # written out
+            dist_out_path = os.path.join(self.parent.dist_output_dir, f'bray_curtis_within_spp_sample_distances_{spp}.dist')
+            with open(dist_out_path, 'w') as f:
+                for line in distance_out_file:
+                    f.write('{}\n'.format(line))
+            return distance_out_file
+
+        def _get_spp_sample_distance_dict(self, minor_div_abundance_dict, sample_names_of_spp):
+            if os.path.isfile(os.path.join(self.parent.cache_dir, f'spp_distance_dict_{spp}.p')):
+                spp_distance_dict = pickle.load(
+                    open(os.path.join(self.parent.cache_dir, f'spp_distance_dict_{spp}.p'), 'rb'))
+
+            else:
+                spp_distance_dict = self._make_spp_sample_distance_dict_from_scratch(
+                    minor_div_abundance_dict, sample_names_of_spp)
+            return spp_distance_dict
+
+        def _make_spp_sample_distance_dict_from_scratch(self, minor_div_abundance_dict, sample_names_of_spp):
+            # Create a dictionary that will hold the distance between the two samples
+            spp_distance_dict = {}
+            # For pairwise comparison of each of these sequences
+            for smp_one, smp_two in itertools.combinations(sample_names_of_spp, 2):
+                print('Calculating distance for {}_{}'.format(smp_one, smp_two))
+                # Get a set of the sequences found in either one of the samples
+                smp_one_abund_dict = minor_div_abundance_dict[smp_one]
+                smp_two_abund_dict = minor_div_abundance_dict[smp_two]
+                list_of_seqs_of_pair = []
+                list_of_seqs_of_pair.extend(list(smp_one_abund_dict.keys()))
+                list_of_seqs_of_pair.extend(list(smp_two_abund_dict.keys()))
+                list_of_seqs_of_pair = list(set(list_of_seqs_of_pair))
+
+                # then create a list of abundances for sample one by going through the above list and checking
+                sample_one_abundance_list = []
+                for seq_name in list_of_seqs_of_pair:
+                    if seq_name in smp_one_abund_dict.keys():
+                        sample_one_abundance_list.append(smp_one_abund_dict[seq_name])
+                    else:
+                        sample_one_abundance_list.append(0)
+
+                # then create a list of abundances for sample two by going through the above list and checking
+                sample_two_abundance_list = []
+                for seq_name in list_of_seqs_of_pair:
+                    if seq_name in smp_two_abund_dict.keys():
+                        sample_two_abundance_list.append(smp_two_abund_dict[seq_name])
+                    else:
+                        sample_two_abundance_list.append(0)
+
+                # Do the Bray Curtis.
+                distance = braycurtis(sample_one_abundance_list, sample_two_abundance_list)
+
+                # Add the distance to the dictionary using both combinations of the sample names
+                spp_distance_dict['{}_{}'.format(smp_one, smp_two)] = distance
+                spp_distance_dict['{}_{}'.format(smp_two, smp_one)] = distance
+            # doing this takes a bit of time so let's pickle it out
+            pickle.dump(spp_distance_dict,
+                        open(os.path.join(self.parent.cache_dir, f'spp_distance_dict_{spp}.p'), 'wb'))
+            return spp_distance_dict
+
+    class GenericPlottingMethods:
+        """A class that will hold the methods shared by all of the plotting methods"""
+
+        @staticmethod
+        def _remove_axes_but_allow_labels(ax, x_tick_label_list=None):
+            ax.set_frame_on(False)
+            if not x_tick_label_list:
+                ax.set_xticks([])
+            ax.set_yticks([])
+            ax.minorticks_off()
+
+    class E18S_ITS2_PCOA_FIGURE(Generic_PCOA_DIST_Methods, GenericPlottingMethods):
+        """A class  for holding the methods specific to plotting the figure that links the 18S ordinations with the
+        zooxs its2 information.
+        """
+        def __init__(self, parent):
+            EighteenSAnalysis.Generic_PCOA_DIST_Methods.__init__(self, parent)
+            EighteenSAnalysis.GenericPlottingMethods.__init__(self)
+            self.foo = 'asdf'
+            self.pcoa_df_dict = self._generate_bray_curtis_distance_and_pcoa_spp()
+            self.spp_list = ['Porites', 'Pocillopora', 'Millepora']
+            self.marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
+
+            self._setup_fig_layout()
+
+            # These three objects are all populated in _process_div_df()
+            self.smp_id_to_smp_name_dict = None
+            self.smp_name_to_smp_id_dict = None
+            self.sp_output_df_div = None
+            self._process_div_df()
+            self.smp_name_to_smp_id_dict_short = {k.split('_')[0]: v for k, v in self.smp_name_to_smp_id_dict.items()}
+
+            self.colour_dict_type = pickle.load(
+                open('/home/humebc/projects/tara/initial_its2_processing/colour_dict_type.pickle'.format(os.getcwd()),
+                     'rb'))
+
+            # These two objects are created in _process_type_df()
+            self.sp_output_df_type = None
+            self.sorted_type_prof_names_by_local_abund = None
+            self._process_type_df()
+
+            # Thse two objects are created in _get_div_colour_dict_and_ordered_list_of_seqs()
+            # The ordered_list_of_seqs will be used for the plotting order
+            self.ordered_list_of_seqs = None
+            self.colour_dict_div = None
+            self._get_div_colour_dict_and_ordered_list_of_seqs()
+
+            self.ordered_sample_list = self.sp_output_df_type.index.values.tolist()
+
+            # Reorder the columns and rows of the sp_output_df according to the sequence sample and sequence
+            # order so that plotting the data is easier
+            self.sp_output_df_div = self.sp_output_df_div[self.ordered_list_of_seqs]
+
+        def _setup_fig_layout(self):
+            # Setup the figure
+            self.fig = plt.figure(figsize=(18, 10))
+            self.gs = plt.GridSpec(8, 21, figure=self.fig, height_ratios=[3, 0.2, 0.5, 1, 0.1, 1, 0.1, 1],
+                                   width_ratios=[0.2, 0.2, 1, 0.2, 1, 0.2, 1, 1.4, 1, 0.2, 1, 0.2, 1, 1.4, 1, 0.2, 1,
+                                                 0.2, 1,
+                                                 0.2, 0.4])
+            # we can have several axes lists so that we can populate them one by one
+            # first lets make the pcoa plot axes list
+            self.pcoa_axes_list = []
+            # porites ax
+            self.pcoa_axes_list.append(plt.subplot(self.gs[0, 2:7]))
+            # pocillopora ax
+            # test = plt.subplot(gs[0, 7])
+            self.pcoa_axes_list.append(plt.subplot(self.gs[0, 8:13]))
+            # millepora ax
+            self.pcoa_axes_list.append(plt.subplot(self.gs[0, 14:19]))
+            # now make the its2 matrix of plots
+            self.its2_axes_list = []
+            for start_y, start_x in [(3, 2), (3, 8), (3, 14)]:
+                for i in range(0, 5, 2):
+                    for j in range(0, 5, 2):
+                        ind_x = j + start_x
+                        ind_y = i + start_y
+                        self.its2_axes_list.append(plt.subplot(self.gs[ind_y, ind_x]))
+            self.max_n_cols_profiles = 4
+            self.max_n_rows_profiles = 7
+            self.num_leg_cells_profiles = self.max_n_cols_profiles * self.max_n_rows_profiles
+            self.max_n_cols_seqs = 4
+            self.max_n_rows_seqs = 7
+            self.num_leg_cells_seqs = self.max_n_cols_seqs * self.max_n_rows_seqs
+
+        def plot_pcoa_spp_18s_its2(self):
+
+            # plotting of the PCOAs
+
+            for spp in self.spp_list:
+
+                ax = self.pcoa_axes_list[self.spp_list.index(spp)]
+
+                df_of_spp = self.pcoa_df_dict[spp]
+
+                # x values
+                x_values = df_of_spp['PC1'].values.tolist()[:-1]
+
+                # y values
+                y_values = df_of_spp['PC2'].values.tolist()[:-1]
+
+                samples_of_spp = df_of_spp.index.values.tolist()[:-1]
+                # get list of colours and list of markers
+                # colours can designate islands
+                # we will need to look up the colour according to the its2 type profile designation of the sample
+
+                # here we have to see which of the sample names in samples_of_spp are available in the sp_output_df_div
+                island_colour_list = []
+                for smpl_name in samples_of_spp:
+                    try:
+                        max_type = self.sp_output_df_type.loc[self.smp_name_to_smp_id_dict_short[smpl_name]].idxmax()
+                        island_colour_list.append(self.colour_dict_type[max_type])
+                    except:
+                        island_colour_list.append('#000000')
+
+
+                # shapes can designate sites
+
+                marker_list = [self.marker_dict[self.parent.coral_info_df_for_figures.loc[smp, 'island']] for smp in samples_of_spp]
+
+                # plot the points
+                for x_val, y_val, col, mark in zip(x_values, y_values, island_colour_list, marker_list):
+                    ax.scatter(x_val, y_val, c=col, marker=mark)
+
+                # add axes labels
+                ax.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp['PC1'][-1]))
+                ax.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp['PC2'][-1]))
+                # set axis title
+                ax.set_title('{}'.format(spp), fontsize='large', fontweight='bold')
+
+            self._add_labels_its2()
+
+            # here we should start to take on the plotting of the ITS2 data
+            self._plot_data_axes_its2()
+
+            legend_ax = plt.subplot(self.gs[0, 20])
+            self._remove_axes_but_allow_labels(legend_ax)
+            self._vert_leg_axis_with_its2(legend_ax)
+
+            # now put in a labelling for the its2 plots to show the its2 sequences, vs its2 type profiles
+            for i in range(3, 8, 2):
+                ax = plt.subplot(gs[i, 20])
+                self._remove_axes_but_allow_labels(ax)
+                ax.set_xlim(0, 1)
+                ax.set_ylim(0, 1)
+                ax.text(s='its2 seqs', x=0, y=0.5)
+                ax.text(s='its2 type profiles', x=0, y=0)
+
+            self.fig.show()
+
+            plt.savefig(os.path.join(self.parent.figure_output_dir, 'spp_pcoa_with_its2.png'), dpi=1200)
+            plt.savefig(os.path.join(self.parent.figure_output_dir, 'spp_pcoa_with_its2.svg'))
+
+            return
+
+        def _plot_data_axes_its2(self):
+            ax_count = 0
+            for spp in ['PORITES', 'POCILLOPORA', 'MILLEPORA']:
+                for site in ['SITE01', 'SITE02', 'SITE03']:
+                    for location in ['ISLAND06', 'ISLAND10', 'ISLAND15']:
+                        ax = self.ax_list[ax_count]
+                        patches_list = []
+                        ind = 0
+                        colour_list = []
+
+                        # for each set of location, site and spp, we basically want to get a list of the samples
+                        # that meet the set criteria, we then want to plot samples according to the ordered_sample_list
+                        # order which will be in IDs. As such we will have to convert the sample_name in the info_df
+                        # to a sample ID using the smp_name_to_smp_id_dict.
+
+                        # get sample_names that fit the requirements
+                        sample_names_of_set = self.parent.all_samples_info_df.loc[
+                            (self.parent.all_samples_info_df['location'] == location) &
+                            (self.parent.all_samples_info_df['site'] == site) &
+                            (self.parent.all_samples_info_df['spp_water'] == spp)
+                            ].index.values.tolist()
+
+                        if spp == 'PORITES':
+                            if 'CO0001674' in sample_names_of_set:
+                                sample_names_of_set.remove('CO0001674')
+                                sample_names_of_set.remove('CO0001669')
+
+                        # convert these to sample IDs
+                        # The sample names in symportal are actually the full file names version rather than
+                        # the shorter versions in the info_df. As such we should we will have to do a conversion here
+                        smple_ids_of_set = []
+                        for smp_name in sample_names_of_set:
+                            smple_ids_of_set.append(self.smp_name_to_smp_id_dict_short[smp_name])
+
+                        # now we want to plot in the order of the ordered_sample_list
+                        ordered_smple_ids_of_set = [smpl_id for smpl_id in self.ordered_sample_list if
+                                                    smpl_id in smple_ids_of_set]
+
+                        num_smp_in_this_subplot = len(ordered_smple_ids_of_set)
+                        x_tick_label_list = []
+
+                        for smple_id_to_plot in ordered_smple_ids_of_set:
+                            # General plotting
+                            sys.stdout.write('\rPlotting sample: {}'.format(smple_id_to_plot))
+                            x_tick_label_list.append(self.smp_id_to_smp_name_dict[smple_id_to_plot].split('_')[0])
+                            # for each sample we will start at 0 for the y and then add the height of each bar to this
+
+                            # PLOT DIVs
+                            plot_div_over_type_its2(colour_list, ind, patches_list, smple_id_to_plot)
+
+                            # PLOT type
+                            plot_type_under_div_its2(colour_list, ind, patches_list, smple_id_to_plot)
+                            ind += 1
+
+                        self._paint_rect_to_axes_div_and_type_its2(ax=ax, colour_list=colour_list,
+                                                             num_smp_in_this_subplot=num_smp_in_this_subplot,
+                                                             patches_list=patches_list,
+                                                             x_tick_label_list=x_tick_label_list,
+                                                             max_num_smpls_in_subplot=10)
+
+                        ax_count += 1
+
+        def _plot_div_over_type_its2(self, colour_list, ind, patches_list, smple_id_to_plot):
+            bottom_div = 0
+            # for each sequence, create a rect patch
+            # the rect will be 1 in width and centered about the ind value.
+            for seq in list(self.sp_output_df_div):
+                # class matplotlib.patches.Rectangle(xy, width, height, angle=0.0, **kwargs)
+                rel_abund_div = self.sp_output_df_div.loc[smple_id_to_plot, seq]
+                if rel_abund_div > 0:
+                    patches_list.append(
+                        Rectangle((ind - 0.5, bottom_div), 1, rel_abund_div, color=self.colour_dict_div[seq]))
+                    # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
+                    colour_list.append(self.colour_dict_div[seq])
+                    bottom_div += rel_abund_div
+
+        def _plot_type_under_div_its2(self, colour_list, ind, patches_list, smple_id_to_plot):
+            # the idea of the type is to put it as a reflection below the y=0 line
+            # as such we should just want to make everything negative
+            bottom_type = 0
+            # for each sequence, create a rect patch
+            # the rect will be 1 in width and centered about the ind value.
+            # we want to plot the rects so that they add to 1. As such we want to divide
+            # each value by the total for that sample.
+            tot_for_sample = self.sp_output_df_type.loc[smple_id_to_plot].sum()
+            for its2_profile in list(self.sp_output_df_type):
+                rel_abund = self.sp_output_df_type.loc[smple_id_to_plot, its2_profile]
+                if rel_abund > 0:
+                    depth = -0.2 * (rel_abund / tot_for_sample)
+                    patches_list.append(
+                        Rectangle((ind - 0.5, bottom_type), 1, depth,
+                                  color=self.colour_dict_type[its2_profile]))
+                    # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
+                    colour_list.append(self.colour_dict_type[its2_profile])
+                    bottom_type += depth
+
+        def _add_labels_its2(self):
+            #TODO check that this is the right axis list, it could be pcoa instead
+            self.its2_axes_list[0].set_title('ISLAND06', fontsize='large', fontweight='bold')
+            self.its2_axes_list[1].set_title('ISLAND10', fontsize='large', fontweight='bold')
+            self.its2_axes_list[2].set_title('ISLAND15', fontsize='large', fontweight='bold')
+
+            self.its2_axes_list[9].set_title('ISLAND06', fontsize='large', fontweight='bold')
+            self.its2_axes_list[10].set_title('ISLAND10', fontsize='large', fontweight='bold')
+            self.its2_axes_list[11].set_title('ISLAND15', fontsize='large', fontweight='bold')
+
+            self.its2_axes_list[18].set_title('ISLAND06', fontsize='large', fontweight='bold')
+            self.its2_axes_list[19].set_title('ISLAND10', fontsize='large', fontweight='bold')
+            self.its2_axes_list[20].set_title('ISLAND15', fontsize='large', fontweight='bold')
+
+            self.its2_axes_list[0].set_ylabel('SITE 1', fontsize='large', fontweight='bold')
+            self.its2_axes_list[3].set_ylabel('SITE 2', fontsize='large', fontweight='bold')
+            self.its2_axes_list[6].set_ylabel('SITE 3', fontsize='large', fontweight='bold')
+
+        def _get_div_colour_dict_and_ordered_list_of_seqs(self):
+            colour_palette_div = get_colour_list()
+            grey_palette_div = ['#D0CFD4', '#89888D', '#4A4A4C', '#8A8C82', '#D4D5D0', '#53544F']
+            # get a list of the sequences in order of their abundance and use this list to create the colour dict
+            # the abundances can be got by simply summing up the columns making sure to ommit the last columns
+            abundance_dict = {}
+            for col in list(self.sp_output_df_div):
+                abundance_dict[col] = sum(self.sp_output_df_div[col])
+            # get the names of the sequences sorted according to their totalled abundance
+            self.ordered_list_of_seqs = [x[0] for x in sorted(abundance_dict.items(), key=lambda x: x[1], reverse=True)]
+            # create the colour dictionary that will be used for plotting by assigning a colour from the colour_palette
+            # to the most abundant seqs first and after that cycle through the grey_pallette assigning colours
+            # If we aer only going to have a legend that is cols x rows as shown below, then we should only use
+            # that many colours in the plotting.
+
+            colour_dict_div = {}
+            for i in range(len(self.ordered_list_of_seqs)):
+                if i < self.num_leg_cells_seqs:
+                    colour_dict_div[self.ordered_list_of_seqs[i]] = colour_palette_div[i]
+                else:
+                    grey_index = i % len(grey_palette_div)
+                    colour_dict_div[self.ordered_list_of_seqs[i]] = grey_palette_div[grey_index]
+            self.colour_dict_div = colour_dict_div
+
+        def _process_type_df(self):
+            sp_output_df_type = pd.read_csv(self.parent.symportal_profile_output_relative_path, sep='\t', lineterminator='\n',
+                                            skiprows=[0, 1, 2, 3, 5],
+                                            header=None)
+            # get a list of tups that are the seq names and the abundances zipped together
+            type_profile_to_abund_tup_list = [(name, int(abund)) for name, abund in
+                                              zip(sp_output_df_type.iloc[1][2:].values.tolist(),
+                                                  sp_output_df_type.iloc[0][2:].values.tolist())]
+            # convert the names that are numbers into int strings rather than float strings.
+            int_temp_list = []
+            for name_abund_tup in type_profile_to_abund_tup_list:
+                try:
+                    int_temp_list.append((str(int(name_abund_tup[0])), int(name_abund_tup[1])))
+                except:
+                    int_temp_list.append((name_abund_tup[0], int(name_abund_tup[1])))
+            type_profile_to_abund_tup_list = int_temp_list
+            # need to drop the rows that contain the sequence accession and species descriptions
+            index_to_drop_from = None
+            for i, row_name in enumerate(sp_output_df_type.iloc[:, 0]):
+                if 'Sequence accession' in row_name:
+                    # then we want to drop all rows from here until the end
+                    index_to_drop_from = i
+                    break
+            sp_output_df_type = sp_output_df_type.iloc[:index_to_drop_from]
+            # now drop the sample name columns
+            sp_output_df_type.drop(columns=1, inplace=True)
+            # make headers
+            sp_output_df_type.columns = ['sample_id'] + [a[0] for a in type_profile_to_abund_tup_list]
+            # now drop the local abund row and promote the its2_type_prof names to columns headers.
+            sp_output_df_type.drop(index=[0, 1], inplace=True)
+            self.sp_output_df_type = sp_output_df_type.set_index(keys='sample_id', drop=True).astype('float')
+
+
+            # we will use the col headers as the its2 type profile order for plotting but we
+            # we should colour according to the abundance of the its2 type profiles
+            # as we don't want to run out of colours by the time we get to profiles that are very abundant.
+            # The sorted_type_prof_names_by_local_abund object has the names of the its2 type profile in order of abundance
+            # we will use the index order as the order of samples to plot
+            # create the colour dictionary that will be used for plotting by assigning a colour from the colour_palette
+            # to the most abundant seqs first and after that cycle through the grey_pallette assigning colours
+            self.sorted_type_prof_names_by_local_abund = [a[0] for a in
+                                                     sorted(type_profile_to_abund_tup_list, key=lambda x: x[1],
+                                                            reverse=True)]
+
+        def _process_div_df(self):
+            sp_output_df = pd.read_csv(self.parent.symportal_seq_output_relative_path, sep='\t', lineterminator='\n', header=0,
+                                       index_col=0)
+
+            # In order to be able to drop the DIV row at the end and the meta information rows, we should
+            # drop all rows that are after the DIV column. We will pass in an index value to the .drop
+            # that is called here. To do this we need to work out which index we are working with
+            meta_index_to_cut_from = None
+            index_values_as_list = sp_output_df.index.values.tolist()
+            for i in range(-1, -(len(index_values_as_list)), -1):
+                if index_values_as_list[i].startswith('DIV'):
+                    # then this is the index (in negative notation) that we need to cut from
+                    meta_index_to_cut_from = i
+                    break
+            sp_output_df = sp_output_df.iloc[:meta_index_to_cut_from]
+
+            # create sample id to sample name dict
+            self.smp_id_to_smp_name_dict = {ID: '_'.join(nm.split('_')[:3]) for ID, nm in
+                                       zip(sp_output_df.index.values.tolist(),
+                                           sp_output_df['sample_name'].values.tolist())}
+            self.smp_name_to_smp_id_dict = {'_'.join(nm.split('_')[:3]): ID for ID, nm in
+                                       zip(sp_output_df.index.values.tolist(),
+                                           sp_output_df['sample_name'].values.tolist())}
+
+            # now lets drop the QC columns from the SP output df and also drop the clade summation columns
+            # we will be left with just clumns for each one of the sequences found in the samples
+            sp_output_df.drop(
+                columns=['sample_name', 'noName Clade A', 'noName Clade B', 'noName Clade C', 'noName Clade D',
+                         'noName Clade E', 'noName Clade F', 'noName Clade G', 'noName Clade H',
+                         'noName Clade I', 'raw_contigs', 'post_qc_absolute_seqs', 'post_qc_unique_seqs',
+                         'post_taxa_id_absolute_symbiodinium_seqs', 'post_taxa_id_unique_symbiodinium_seqs',
+                         'post_taxa_id_absolute_non_symbiodinium_seqs',
+                         'post_taxa_id_unique_non_symbiodinium_seqs',
+                         'size_screening_violation_absolute', 'size_screening_violation_unique',
+                         'post_med_absolute', 'post_med_unique'
+                         ], inplace=True)
+            self.sp_output_df_div = sp_output_df.astype('float')
+
+        def _paint_rect_to_axes_div_and_type_its2(
+                self, ax, colour_list, num_smp_in_this_subplot, patches_list,max_num_smpls_in_subplot=10):
+            # We can try making a custom colour map
+            # https://matplotlib.org/api/_as_gen/matplotlib.colors.ListedColormap.html
+            this_cmap = ListedColormap(colour_list)
+            # here we should have a list of Rectangle patches
+            # now create the PatchCollection object from the patches_list
+            patches_collection = PatchCollection(patches_list, cmap=this_cmap)
+            patches_collection.set_array(np.arange(len(patches_list)))
+            # if n_subplots is only 1 then we can refer directly to the axarr object
+            # else we will need ot reference the correct set of axes with i
+            # Add the pathces to the axes
+            ax.add_collection(patches_collection)
+            ax.autoscale_view()
+            ax.figure.canvas.draw()
+            # also format the axes.
+            # make it so that the x axes is constant length
+            ax.set_xlim(0 - 0.5, max_num_smpls_in_subplot - 0.5)
+            ax.set_ylim(-0.2, 1)
+            # ax.set_xticks(range(num_smp_in_this_subplot))
+            # ax.set_xticklabels(x_tick_label_list, rotation='vertical', fontsize=6)
+
+            self._remove_axes_but_allow_labels(ax)
+
+            # as well as getting rid of the top and right axis splines
+            # I'd also like to restrict the bottom spine to where there are samples plotted but also
+            # maintain the width of the samples
+            # I think the easiest way to do this is to hack a bit by setting the x axis spines to invisible
+            # and then drawing on a line at y = 0 between the smallest and largest ind (+- 0.5)
+            # ax.spines['bottom'].set_visible(False)
+            ax.add_line(Line2D((0 - 0.5, num_smp_in_this_subplot - 0.5), (0, 0), linewidth=2, color='black'))
+
+        def _vert_leg_axis_with_its2(self, legend_ax):
+            legend_ax.set_ylim(0, 1)
+            legend_ax.set_xlim(0, 1)
+            legend_ax.invert_yaxis()
+            number_of_icons = 3
+            island_list = ['ISLAND06', 'ISLAND10', 'ISLAND15']
+
+            icon_list = []
+            # first populate the island icons
+            # for site in site_list:
+            #     icon_list.append((colour_dict[site], marker_dict['ISLAND06']))
+            # then populate the site icons
+            for island in island_list:
+                icon_list.append(('#808080', self.marker_dict[island]))
+            # lets assume that the axis is divided into 20 spaces for icons
+            max_number_icons = 10
+            # the  icon position should be mid way so max_number_icons
+            # first icon position
+            first_icon_position = int((max_number_icons - number_of_icons) / 2)
+            pos_counter = first_icon_position
+            for i in range(len(icon_list)):
+                y_val_for_icon_and_text = (1 / max_number_icons) * pos_counter
+                x_val_for_icon = 0.4
+                x_val_for_text = x_val_for_icon + 0.4
+                legend_ax.scatter(x=x_val_for_icon, y=y_val_for_icon_and_text, c=icon_list[i][0], marker=icon_list[i][1],
+                                  s=100)
+
+                if int(i / 3) == 0:
+                    legend_ax.text(s=island_list[i], x=x_val_for_text, y=y_val_for_icon_and_text)
+
+                pos_counter += 1
+
+    # TODO put into class
     def plot_pcoa_spp(self, is_three_d=False):
         """
         This is the code for producing the 18s pcoa with either the 3rd and 4th PC underneath or a 3d graph.
@@ -644,7 +1254,7 @@ class EighteenSAnalysis:
             plt.savefig(os.path.join(self.figure_output_dir, 'spp_pcoa_with_pc3_pc4.png'), dpi=1200)
             plt.savefig(os.path.join(self.figure_output_dir, 'spp_pcoa_with_pc3_pc4.svg'))
 
-
+    # TODO put into class
     def plot_pcoa_spp_island(self):
         """
         This is the code for producing a pcoa per island per species.
@@ -878,168 +1488,15 @@ class EighteenSAnalysis:
                 legend_ax.text(s=island_list[i % 3], x=x_val_for_text, y=y_val_for_icon_and_text)
             pos_counter += 1
 
-    def _generate_bray_curtis_distance_and_pcoa_spp(self):
-        """
-        This is code for generating PCOAs for each of the coral species.
-        Read in the minor div dataframe which should have normalised abundances in them
-        For each sample we have a fasta that we can read in which has the normalised (to 1000) sequences
-        For feeding into med. We can use a default dict to collect the sequences and abundances from this fairly
-        simply.
-        This is likely best done on for each sample outside of the pairwise comparison to save on redoing the same
-        collection of the sequences.
-        """
 
-        if os.path.isfile(os.path.join(self.cache_dir, 'minor_div_abundance_dict.p')):
-            minor_div_abundance_dict = pickle.load(
-                open(os.path.join(self.cache_dir, 'minor_div_abundance_dict.p'), 'rb'))
 
-        else:
-            minor_div_abundance_dict = self._generate_minor_div_abundance_dict_from_scratch()
 
-        # For each of the spp.
-        spp_pcoa_df_dict = {}
-        for spp in ['Porites', 'Pocillopora', 'Millepora']:
-            if os.path.isfile(os.path.join(self.cache_dir, f'spp_pcoa_df_{spp}.p')):
-                spp_pcoa_df = pickle.load(open(os.path.join(self.cache_dir, f'spp_pcoa_df_{spp}.p'), 'rb'))
-            else:
-                # Get a list of the samples that we should be working with
-                sample_names_of_spp = self.coral_info_df_for_figures.loc[
-                    self.coral_info_df_for_figures['genus'] == spp.upper()].index.values.tolist()
 
-                # remove the two porites species form this that seem to be total outliers
-                if spp == 'Porites':
-                    sample_names_of_spp.remove('CO0001674')
-                    sample_names_of_spp.remove('CO0001669')
 
-                spp_distance_dict = self._get_spp_sample_distance_dict(minor_div_abundance_dict, sample_names_of_spp)
 
-                distance_out_file = self._make_and_write_out_spp_dist_file(sample_names_of_spp, spp_distance_dict)
 
-                # Feed this into the generate_PCoA_coords method
-                spp_pcoa_df = self._generate_PCoA_coords(distance_out_file, spp)
-                pickle.dump(spp_pcoa_df, open(os.path.join(self.cache_dir, f'spp_pcoa_df_{spp}.p'), 'wb'))
-            spp_pcoa_df_dict[spp] = spp_pcoa_df
-        return spp_pcoa_df_dict
 
-    def _generate_PCoA_coords(self, raw_dist_file, spp):
-        # simultaneously grab the sample names in the order of the distance matrix and put the matrix into
-        # a twoD list and then convert to a numpy array
-        temp_two_D_list = []
-        sample_names_from_dist_matrix = []
-        for line in raw_dist_file[1:]:
-            temp_elements = line.split('\t')
-            sample_names_from_dist_matrix.append(temp_elements[0])
-            temp_two_D_list.append([float(a) for a in temp_elements[1:]])
-        uni_frac_dist_array = np.array(temp_two_D_list)
-        sys.stdout.write('\rcalculating PCoA coordinates')
-        pcoA_full_path = '{}/pcoa_coords_{}.csv'.format(os.getcwd(), spp)
-        pcoa_df = pcoa(uni_frac_dist_array)
 
-        # rename the dataframe index as the sample names
-        pcoa_df.samples['sample'] = sample_names_from_dist_matrix
-        renamed_dataframe = pcoa_df.samples.set_index('sample')
-
-        # now add the variance explained as a final row to the renamed_dataframe
-
-        renamed_dataframe = renamed_dataframe.append(pcoa_df.proportion_explained.rename('proportion_explained'))
-
-        return renamed_dataframe
-
-    def _make_and_write_out_spp_dist_file(self, sample_names_of_spp, spp_distance_dict):
-        # Generate the distance out file from this dictionary
-        # from this dict we can produce the distance file that can be passed into the generate_PCoA_coords method
-        distance_out_file = [len(sample_names_of_spp)]
-        for sample_outer in sample_names_of_spp:
-            # The list that will hold the line of distance. This line starts with the name of the sample
-            temp_sample_dist_string = [sample_outer]
-
-            for sample_inner in sample_names_of_spp:
-                if sample_outer == sample_inner:
-                    temp_sample_dist_string.append(0)
-                else:
-                    temp_sample_dist_string.append(spp_distance_dict[
-                                                       '{}_{}'.format(sample_outer, sample_inner)])
-            distance_out_file.append(
-                '\t'.join([str(distance_item) for distance_item in temp_sample_dist_string]))
-        # from here we can hopefully rely on the rest of the methods as they already are. The .dist file should be
-        # written out
-        dist_out_path = os.path.join(self.dist_output_dir, f'bray_curtis_within_spp_sample_distances_{spp}.dist')
-        with open(dist_out_path, 'w') as f:
-            for line in distance_out_file:
-                f.write('{}\n'.format(line))
-        return distance_out_file
-
-    def _get_spp_sample_distance_dict(self, minor_div_abundance_dict, sample_names_of_spp):
-        if os.path.isfile(os.path.join(self.cache_dir, f'spp_distance_dict_{spp}.p')):
-            spp_distance_dict = pickle.load(
-                open(os.path.join(self.cache_dir, f'spp_distance_dict_{spp}.p'), 'rb'))
-
-        else:
-            spp_distance_dict = self._make_spp_sample_distance_dict_from_scratch(
-                minor_div_abundance_dict, sample_names_of_spp)
-        return spp_distance_dict
-
-    def _make_spp_sample_distance_dict_from_scratch(self, minor_div_abundance_dict, sample_names_of_spp):
-        # Create a dictionary that will hold the distance between the two samples
-        spp_distance_dict = {}
-        # For pairwise comparison of each of these sequences
-        for smp_one, smp_two in itertools.combinations(sample_names_of_spp, 2):
-            print('Calculating distance for {}_{}'.format(smp_one, smp_two))
-            # Get a set of the sequences found in either one of the samples
-            smp_one_abund_dict = minor_div_abundance_dict[smp_one]
-            smp_two_abund_dict = minor_div_abundance_dict[smp_two]
-            list_of_seqs_of_pair = []
-            list_of_seqs_of_pair.extend(list(smp_one_abund_dict.keys()))
-            list_of_seqs_of_pair.extend(list(smp_two_abund_dict.keys()))
-            list_of_seqs_of_pair = list(set(list_of_seqs_of_pair))
-
-            # then create a list of abundances for sample one by going through the above list and checking
-            sample_one_abundance_list = []
-            for seq_name in list_of_seqs_of_pair:
-                if seq_name in smp_one_abund_dict.keys():
-                    sample_one_abundance_list.append(smp_one_abund_dict[seq_name])
-                else:
-                    sample_one_abundance_list.append(0)
-
-            # then create a list of abundances for sample two by going through the above list and checking
-            sample_two_abundance_list = []
-            for seq_name in list_of_seqs_of_pair:
-                if seq_name in smp_two_abund_dict.keys():
-                    sample_two_abundance_list.append(smp_two_abund_dict[seq_name])
-                else:
-                    sample_two_abundance_list.append(0)
-
-            # Do the Bray Curtis.
-            distance = braycurtis(sample_one_abundance_list, sample_two_abundance_list)
-
-            # Add the distance to the dictionary using both combinations of the sample names
-            spp_distance_dict['{}_{}'.format(smp_one, smp_two)] = distance
-            spp_distance_dict['{}_{}'.format(smp_two, smp_one)] = distance
-        # doing this takes a bit of time so let's pickle it out
-        pickle.dump(spp_distance_dict,
-                    open(os.path.join(self.cache_dir, f'spp_distance_dict_{spp}.p'), 'wb'))
-        return spp_distance_dict
-
-    def _generate_minor_div_abundance_dict_from_scratch(self):
-        # this dict will have sample name as key and then a dict as value with seq to abundance values
-        # we can then work with this for the pairwise comparison
-        minor_div_abundance_dict = {}
-        for ind in self.coral_info_df_for_figures.index.values.tolist():
-            sample_dir = self.coral_info_df_for_figures.loc[ind, 'sample_dir']
-            with open('{}/fasta_for_med.fasta'.format(sample_dir), 'r') as f:
-                sample_fasta = [line.rstrip() for line in f]
-
-            sample_minor_abundance_dict = defaultdict(int)
-            for i in range(0, len(sample_fasta), 2):
-                sample_minor_abundance_dict[sample_fasta[i + 1]] += 1
-
-            # here we have the dict popoulated for the sample
-            # we can now add this to the minor_div_abundace_dict
-            minor_div_abundance_dict[ind] = sample_minor_abundance_dict
-        # we should now pickle out this sample_minor_abundance_dict
-        pickle.dump(
-            minor_div_abundance_dict, open(os.path.join(self.cache_dir, 'minor_div_abundance_dict.p'), 'wb'))
-        return minor_div_abundance_dict
 
     def identify_taxa_of_seqs_in_coral_samples(self, numProc=20):
         """The sequence_QC method has taken care of the basic mothur qc for us. The next step will be to run a blast
@@ -1268,13 +1725,6 @@ class EighteenSAnalysis:
         seq_stacked_bar_plotter = self.SeqStackedBarPlotter(plot_type=plot_type, parent=self)
 
         seq_stacked_bar_plotter.plot()
-
-    def _remove_axes_but_allow_labels(self, ax, x_tick_label_list=None):
-        ax.set_frame_on(False)
-        if not x_tick_label_list:
-            ax.set_xticks([])
-        ax.set_yticks([])
-        ax.minorticks_off()
 
     class SeqStackedBarPlotter():
         """This method produced stacked bar charts. It can produce different charts depending on the plot_type.
@@ -2509,168 +2959,168 @@ class EighteenSAnalysis:
             for un_file in un_files:
                 subprocess.run(['gzip', '{}/{}'.format(self.current_dir, un_file)])
 
-    class NetworkStuff:
-        """
-        # TODO this is still work in progress. I have just shoved all of the methods that were related to this
-        in progress work in to this class as a holder. It still needs to be properly refactored.
-        I want to make splits tree networks of the 18s sequences. To do this i will need to get the seuqences in better
-        shape so that I can align them. Currently they are of very different lengths. I will go back into each of the
-        sample folders and I will align the latest fasta file and then do cropping using 90% cutoff or something.
-        this means that I will get rid of gaps at the beginning and end of the alignment if the column position has gaps for
-        90% of the sequences.
-        On these cropped sequences I will then re-unique and then finally realign the sequences. These sequences will then
-        be ready for making networks from. It may also be a good idea to work with these sequences for all of the work we have
-        done up until now.
-
-        """
-        def __init__(self, parent):
-            self.parent = parent
-
-        def prepare_sequences_for_networking(self):
-
-            # for each coral sample do the alignment and cropping and re-alignment of sequences first
-            for ind in self.parent.coral_info_df_for_figures.index.values.tolist():
-                sample_dir = self.parent.coral_info_df_for_figures.loc[ind, 'sample_dir']
-
-                if os.path.isfile('{}/coral_aligned_fasta_for_networks.fasta'.format(sample_dir)) and os.path.isfile(
-                        '{}/coral_fasta_aligned_and_cropped.names'.format(sample_dir)):
-                    # then this sample has already been completed
-                    continue
-
-                print('Processing {}'.format(ind))
-                sample_genus = self.parent.coral_info_df_for_figures.loc[ind, 'genus']
-
-                current_fasta_file_path = '{}/stability.trim.contigs.good.unique.abund.pcr.fasta'.format(sample_dir)
-                with open(current_fasta_file_path, 'r') as f:
-                    current_fasta_file = [line.rstrip() for line in f]
-                current_fasta_dict = {current_fasta_file[i][1:].split('\t')[0]: current_fasta_file[i + 1] for i in
-                                      range(0, len(current_fasta_file), 2)}
-
-                current_names_file_path = '{}/stability.trim.contigs.good.abund.pcr.names'.format(sample_dir)
-                with open(current_names_file_path, 'r') as f:
-                    current_names_file = [line.rstrip() for line in f]
-                current_names_dict = {line.split('\t')[0]: line for line in current_names_file}
-
-                # this fasta currently contains all of the sequences including non-genus specific seqs
-                # we are only interested in the genus specific seqs so lets pull these out using the
-                # coral_dict.pickle file
-                coral_seq_dict = pickle.load(open('{}/coral_dict.pickle'.format(sample_dir), 'rb'))
-
-                fasta_for_alignment = []
-                names_for_alignment = []
-                for seq_key, coral_genus in coral_seq_dict.items():
-                    if coral_genus.upper() == sample_genus.upper():
-                        fasta_for_alignment.extend(['>{}'.format(seq_key), current_fasta_dict[seq_key]])
-                        names_for_alignment.append(current_names_dict[seq_key])
-
-                # here we have a fasta file and a names file pair that are just the coral genus in question.
-                # we should now write these out and then align them. Then do the cropping
-                path_to_fasta_file_to_align = '{}/coral_fasta_to_align_and_crop.fasta'.format(sample_dir)
-                path_to_names_file_to_align = '{}/coral_names.names'.format(sample_dir)
-
-                # write out the fasta
-                with open(path_to_fasta_file_to_align, 'w') as f:
-                    for line in fasta_for_alignment:
-                        f.write('{}\n'.format(line))
-
-                # write out the .names file
-                with open(path_to_names_file_to_align, 'w') as f:
-                    for line in names_for_alignment:
-                        f.write('{}\n'.format(line))
-
-                aligned_fasta_path = '{}/coral_fasta_aligned_to_crop.fasta'.format(sample_dir)
-
-                self.align_fasta(input_fasta_path=path_to_fasta_file_to_align, output_fasta_path=aligned_fasta_path)
-
-                # this method takes an input path and an output path
-                path_to_fasta_cropped = '{}/coral_fasta_aligned_and_cropped.fasta'.format(sample_dir)
-
-                # at this point we have the original fasta aligned and cropped.
-                cropping.crop_fasta(input_path=aligned_fasta_path, output_path=path_to_fasta_cropped, cutoff=0.9)
-
-                # we now need to remove the gaps from the sequences else we end up with a strange '.' character in our fasta
-                # file after the seqs.unique
-                # read in the aligned fasta file
-
-                self.remove_gaps_from_alignment(input_fasta_alignment_path=path_to_fasta_cropped)
-
-                # now we re run mothur to do a unique on the fasta a names pair
-                mBatchFile = [
-                    r'set.dir(input={})'.format(sample_dir),
-                    r'set.dir(output={})'.format(sample_dir),
-                    r'unique.seqs(fasta={}, name={})'.format(path_to_fasta_cropped, path_to_names_file_to_align),
-                    r'summary.seqs(fasta={0}/coral_fasta_aligned_and_cropped.unique.fasta, name={0}/coral_fasta_aligned_and_cropped.names)'.format(
-                        sample_dir)
-                ]
-
-                mBatchFile_path = '{}/mBatchFile_two'.format(sample_dir)
-
-                # write out batch file
-                with open(mBatchFile_path, 'w') as f:
-                    for line in mBatchFile:
-                        f.write('{}\n'.format(line))
-
-                # run the mothur processing
-                # subprocess.run(['mothur', r'{0}'.format(mBatchFile_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                subprocess.run(['mothur', r'{}'.format(mBatchFile_path)])
-
-                # at this point we should have a new .fasta file and a new .names file
-                # we will then want to align these
-                # this seems to have worked really well. We are down to 149 sequences
-
-                # now we need to re-align these sequencs to get an alignment to work with
-                input_fasta_for_alignment = '{}/coral_fasta_aligned_and_cropped.unique.fasta'.format(sample_dir)
-                output_fasta_aligned = '{}/coral_aligned_fasta_for_networks.fasta'.format(sample_dir)
-                self.align_fasta(input_fasta_path=input_fasta_for_alignment, output_fasta_path=output_fasta_aligned)
-                # at this point we have the .names file which is coral_fasta_aligned_and_cropped.names and the aligned
-                # fasta that is coral_aligned_fasta_for_networks.fasta
-            apples = 'asdf'
-
-        def remove_gaps_from_alignment(self, input_fasta_alignment_path):
-            with open(input_fasta_alignment_path, 'r') as f:
-                fasta_to_remove_gaps = [line.rstrip() for line in f]
-            fasta_without_gaps = []
-            for i in range(len(fasta_to_remove_gaps)):
-                if i % 2 == 1:
-                    fasta_without_gaps.append(fasta_to_remove_gaps[i].replace('-', ''))
-                else:
-                    fasta_without_gaps.append(fasta_to_remove_gaps[i])
-            # now write out the fasta without gaps
-            with open(input_fasta_alignment_path, 'w') as f:
-                for line in fasta_without_gaps:
-                    f.write('{}\n'.format(line))
-
-        def align_fasta(self, input_fasta_path, output_fasta_path):
-            # now perform the alignment with MAFFT
-            mafft = local["mafft-linsi"]
-            out_file = input_fasta_path.replace('.fasta', '_aligned.fasta')
-            # now run mafft including the redirect
-            (mafft['--thread', -1, input_fasta_path] > out_file)()
-            # read in the interleaved aligned fasta
-            with open(out_file, 'r') as f:
-                aligned_fasta_interleaved = [line.rstrip() for line in f]
-            # make a serial fasta from the interleaved fasta
-            aligned_fasta = self.convert_interleaved_to_sequencial_fasta_two(aligned_fasta_interleaved)
-            # write out the fasta to be cropped
-            with open(output_fasta_path, 'w') as f:
-                for line in aligned_fasta:
-                    f.write('{}\n'.format(line))
-
-        def convert_interleaved_to_sequencial_fasta_two(self, fasta_in):
-            fasta_out = []
-            for i in range(len(fasta_in)):
-                if fasta_in[i].startswith('>'):
-                    if fasta_out:
-                        # if the fasta is not empty then this is not the first
-                        fasta_out.append(temp_seq_str)
-                    # else then this is the first sequence and there is no need to add the seq.
-                    temp_seq_str = ''
-                    fasta_out.append(fasta_in[i])
-                else:
-                    temp_seq_str = temp_seq_str + fasta_in[i]
-            # finally we need to add in the last sequence
-            fasta_out.append(temp_seq_str)
-            return fasta_out
+    # class NetworkStuff:
+    #     """
+    #     # TODO this is still work in progress. I have just shoved all of the methods that were related to this
+    #     in progress work in to this class as a holder. It still needs to be properly refactored.
+    #     I want to make splits tree networks of the 18s sequences. To do this i will need to get the seuqences in better
+    #     shape so that I can align them. Currently they are of very different lengths. I will go back into each of the
+    #     sample folders and I will align the latest fasta file and then do cropping using 90% cutoff or something.
+    #     this means that I will get rid of gaps at the beginning and end of the alignment if the column position has gaps for
+    #     90% of the sequences.
+    #     On these cropped sequences I will then re-unique and then finally realign the sequences. These sequences will then
+    #     be ready for making networks from. It may also be a good idea to work with these sequences for all of the work we have
+    #     done up until now.
+    #
+    #     """
+    #     def __init__(self, parent):
+    #         self.parent = parent
+    #
+    #     def prepare_sequences_for_networking(self):
+    #
+    #         # for each coral sample do the alignment and cropping and re-alignment of sequences first
+    #         for ind in self.parent.coral_info_df_for_figures.index.values.tolist():
+    #             sample_dir = self.parent.coral_info_df_for_figures.loc[ind, 'sample_dir']
+    #
+    #             if os.path.isfile('{}/coral_aligned_fasta_for_networks.fasta'.format(sample_dir)) and os.path.isfile(
+    #                     '{}/coral_fasta_aligned_and_cropped.names'.format(sample_dir)):
+    #                 # then this sample has already been completed
+    #                 continue
+    #
+    #             print('Processing {}'.format(ind))
+    #             sample_genus = self.parent.coral_info_df_for_figures.loc[ind, 'genus']
+    #
+    #             current_fasta_file_path = '{}/stability.trim.contigs.good.unique.abund.pcr.fasta'.format(sample_dir)
+    #             with open(current_fasta_file_path, 'r') as f:
+    #                 current_fasta_file = [line.rstrip() for line in f]
+    #             current_fasta_dict = {current_fasta_file[i][1:].split('\t')[0]: current_fasta_file[i + 1] for i in
+    #                                   range(0, len(current_fasta_file), 2)}
+    #
+    #             current_names_file_path = '{}/stability.trim.contigs.good.abund.pcr.names'.format(sample_dir)
+    #             with open(current_names_file_path, 'r') as f:
+    #                 current_names_file = [line.rstrip() for line in f]
+    #             current_names_dict = {line.split('\t')[0]: line for line in current_names_file}
+    #
+    #             # this fasta currently contains all of the sequences including non-genus specific seqs
+    #             # we are only interested in the genus specific seqs so lets pull these out using the
+    #             # coral_dict.pickle file
+    #             coral_seq_dict = pickle.load(open('{}/coral_dict.pickle'.format(sample_dir), 'rb'))
+    #
+    #             fasta_for_alignment = []
+    #             names_for_alignment = []
+    #             for seq_key, coral_genus in coral_seq_dict.items():
+    #                 if coral_genus.upper() == sample_genus.upper():
+    #                     fasta_for_alignment.extend(['>{}'.format(seq_key), current_fasta_dict[seq_key]])
+    #                     names_for_alignment.append(current_names_dict[seq_key])
+    #
+    #             # here we have a fasta file and a names file pair that are just the coral genus in question.
+    #             # we should now write these out and then align them. Then do the cropping
+    #             path_to_fasta_file_to_align = '{}/coral_fasta_to_align_and_crop.fasta'.format(sample_dir)
+    #             path_to_names_file_to_align = '{}/coral_names.names'.format(sample_dir)
+    #
+    #             # write out the fasta
+    #             with open(path_to_fasta_file_to_align, 'w') as f:
+    #                 for line in fasta_for_alignment:
+    #                     f.write('{}\n'.format(line))
+    #
+    #             # write out the .names file
+    #             with open(path_to_names_file_to_align, 'w') as f:
+    #                 for line in names_for_alignment:
+    #                     f.write('{}\n'.format(line))
+    #
+    #             aligned_fasta_path = '{}/coral_fasta_aligned_to_crop.fasta'.format(sample_dir)
+    #
+    #             self.align_fasta(input_fasta_path=path_to_fasta_file_to_align, output_fasta_path=aligned_fasta_path)
+    #
+    #             # this method takes an input path and an output path
+    #             path_to_fasta_cropped = '{}/coral_fasta_aligned_and_cropped.fasta'.format(sample_dir)
+    #
+    #             # at this point we have the original fasta aligned and cropped.
+    #             cropping.crop_fasta(input_path=aligned_fasta_path, output_path=path_to_fasta_cropped, cutoff=0.9)
+    #
+    #             # we now need to remove the gaps from the sequences else we end up with a strange '.' character in our fasta
+    #             # file after the seqs.unique
+    #             # read in the aligned fasta file
+    #
+    #             self.remove_gaps_from_alignment(input_fasta_alignment_path=path_to_fasta_cropped)
+    #
+    #             # now we re run mothur to do a unique on the fasta a names pair
+    #             mBatchFile = [
+    #                 r'set.dir(input={})'.format(sample_dir),
+    #                 r'set.dir(output={})'.format(sample_dir),
+    #                 r'unique.seqs(fasta={}, name={})'.format(path_to_fasta_cropped, path_to_names_file_to_align),
+    #                 r'summary.seqs(fasta={0}/coral_fasta_aligned_and_cropped.unique.fasta, name={0}/coral_fasta_aligned_and_cropped.names)'.format(
+    #                     sample_dir)
+    #             ]
+    #
+    #             mBatchFile_path = '{}/mBatchFile_two'.format(sample_dir)
+    #
+    #             # write out batch file
+    #             with open(mBatchFile_path, 'w') as f:
+    #                 for line in mBatchFile:
+    #                     f.write('{}\n'.format(line))
+    #
+    #             # run the mothur processing
+    #             # subprocess.run(['mothur', r'{0}'.format(mBatchFile_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    #             subprocess.run(['mothur', r'{}'.format(mBatchFile_path)])
+    #
+    #             # at this point we should have a new .fasta file and a new .names file
+    #             # we will then want to align these
+    #             # this seems to have worked really well. We are down to 149 sequences
+    #
+    #             # now we need to re-align these sequencs to get an alignment to work with
+    #             input_fasta_for_alignment = '{}/coral_fasta_aligned_and_cropped.unique.fasta'.format(sample_dir)
+    #             output_fasta_aligned = '{}/coral_aligned_fasta_for_networks.fasta'.format(sample_dir)
+    #             self.align_fasta(input_fasta_path=input_fasta_for_alignment, output_fasta_path=output_fasta_aligned)
+    #             # at this point we have the .names file which is coral_fasta_aligned_and_cropped.names and the aligned
+    #             # fasta that is coral_aligned_fasta_for_networks.fasta
+    #         apples = 'asdf'
+    #
+    #     def remove_gaps_from_alignment(self, input_fasta_alignment_path):
+    #         with open(input_fasta_alignment_path, 'r') as f:
+    #             fasta_to_remove_gaps = [line.rstrip() for line in f]
+    #         fasta_without_gaps = []
+    #         for i in range(len(fasta_to_remove_gaps)):
+    #             if i % 2 == 1:
+    #                 fasta_without_gaps.append(fasta_to_remove_gaps[i].replace('-', ''))
+    #             else:
+    #                 fasta_without_gaps.append(fasta_to_remove_gaps[i])
+    #         # now write out the fasta without gaps
+    #         with open(input_fasta_alignment_path, 'w') as f:
+    #             for line in fasta_without_gaps:
+    #                 f.write('{}\n'.format(line))
+    #
+    #     def align_fasta(self, input_fasta_path, output_fasta_path):
+    #         # now perform the alignment with MAFFT
+    #         mafft = local["mafft-linsi"]
+    #         out_file = input_fasta_path.replace('.fasta', '_aligned.fasta')
+    #         # now run mafft including the redirect
+    #         (mafft['--thread', -1, input_fasta_path] > out_file)()
+    #         # read in the interleaved aligned fasta
+    #         with open(out_file, 'r') as f:
+    #             aligned_fasta_interleaved = [line.rstrip() for line in f]
+    #         # make a serial fasta from the interleaved fasta
+    #         aligned_fasta = self.convert_interleaved_to_sequencial_fasta_two(aligned_fasta_interleaved)
+    #         # write out the fasta to be cropped
+    #         with open(output_fasta_path, 'w') as f:
+    #             for line in aligned_fasta:
+    #                 f.write('{}\n'.format(line))
+    #
+    #     def convert_interleaved_to_sequencial_fasta_two(self, fasta_in):
+    #         fasta_out = []
+    #         for i in range(len(fasta_in)):
+    #             if fasta_in[i].startswith('>'):
+    #                 if fasta_out:
+    #                     # if the fasta is not empty then this is not the first
+    #                     fasta_out.append(temp_seq_str)
+    #                 # else then this is the first sequence and there is no need to add the seq.
+    #                 temp_seq_str = ''
+    #                 fasta_out.append(fasta_in[i])
+    #             else:
+    #                 temp_seq_str = temp_seq_str + fasta_in[i]
+    #         # finally we need to add in the last sequence
+    #         fasta_out.append(temp_seq_str)
+    #         return fasta_out
 
 eighteen_s_analysis = EighteenSAnalysis()
 # eighteen_s_analysis.do_seq_qc()
