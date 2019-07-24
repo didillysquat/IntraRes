@@ -25,162 +25,9 @@ from plumbum import local
 import cropping
 
 
-# I want to make splits tree networks of the 18s sequences. To do this i will need to get the seuqences in better
-# shape so that I can align them. Currently they are of very different lengths. I will go back into each of the
-# sample folders and I will align the latest fasta file and then do cropping using 90% cutoff or something.
-# this means that I will get rid of gaps at the beginning and end of the alignment if the column position has gaps for
-# 90% of the sequences.
-# On these cropped sequences I will then re-unique and then finally realign the sequences. These sequences will then
-# be ready for making networks from. It may also be a good idea to work with these sequences for all of the work we have
-# done up until now.
-def prepare_sequences_for_networking():
-    info_df = generate_info_df_for_samples()
-    fig_info_df = generate_fig_indo_df(info_df)
-
-    # for each coral sample do the alignment and cropping and re-alignment of sequences first
-    for ind in fig_info_df.index.values.tolist():
-        sample_dir = fig_info_df.loc[ind, 'sample_dir']
-
-        if os.path.isfile('{}/coral_aligned_fasta_for_networks.fasta'.format(sample_dir)) and os.path.isfile('{}/coral_fasta_aligned_and_cropped.names'.format(sample_dir)):
-            # then this sample has already been completed
-            continue
-
-        print('Processing {}'.format(ind))
-        sample_genus = fig_info_df.loc[ind, 'genus']
-
-        current_fasta_file_path = '{}/stability.trim.contigs.good.unique.abund.pcr.fasta'.format(sample_dir)
-        with open(current_fasta_file_path, 'r') as f:
-            current_fasta_file = [line.rstrip() for line in f]
-        current_fasta_dict = {current_fasta_file[i][1:].split('\t')[0] :current_fasta_file[i+1] for i in range(0, len(current_fasta_file),2)}
 
 
-        current_names_file_path = '{}/stability.trim.contigs.good.abund.pcr.names'.format(sample_dir)
-        with open(current_names_file_path, 'r') as f:
-            current_names_file = [line.rstrip() for line in f]
-        current_names_dict = {line.split('\t')[0]: line for line in current_names_file}
 
-        # this fasta currently contains all of the sequences including non-genus specific seqs
-        # we are only interested in the genus specific seqs so lets pull these out using the
-        # coral_dict.pickle file
-        coral_seq_dict = pickle.load(open('{}/coral_dict.pickle'.format(sample_dir), 'rb'))
-
-        fasta_for_alignment = []
-        names_for_alignment = []
-        for seq_key, coral_genus in coral_seq_dict.items():
-            if coral_genus.upper() == sample_genus.upper():
-                fasta_for_alignment.extend(['>{}'.format(seq_key), current_fasta_dict[seq_key]])
-                names_for_alignment.append(current_names_dict[seq_key])
-
-        # here we have a fasta file and a names file pair that are just the coral genus in question.
-        # we should now write these out and then align them. Then do the cropping
-        path_to_fasta_file_to_align = '{}/coral_fasta_to_align_and_crop.fasta'.format(sample_dir)
-        path_to_names_file_to_align = '{}/coral_names.names'.format(sample_dir)
-
-        # write out the fasta
-        with open(path_to_fasta_file_to_align, 'w') as f:
-            for line in fasta_for_alignment:
-                f.write('{}\n'.format(line))
-
-        # write out the .names file
-        with open(path_to_names_file_to_align, 'w') as f:
-            for line in names_for_alignment:
-                f.write('{}\n'.format(line))
-
-        aligned_fasta_path = '{}/coral_fasta_aligned_to_crop.fasta'.format(sample_dir)
-
-        align_fasta(input_fasta_path=path_to_fasta_file_to_align, output_fasta_path=aligned_fasta_path)
-
-        # this method takes an input path and an output path
-        path_to_fasta_cropped = '{}/coral_fasta_aligned_and_cropped.fasta'.format(sample_dir)
-
-        # at this point we have the original fasta aligned and cropped.
-        cropping.crop_fasta(input_path=aligned_fasta_path, output_path=path_to_fasta_cropped, cutoff=0.9)
-
-        # we now need to remove the gaps from the sequences else we end up with a strange '.' character in our fasta
-        # file after the seqs.unique
-        # read in the aligned fasta file
-
-        remove_gaps_from_alignment(input_fasta_alignment_path=path_to_fasta_cropped)
-
-        # now we re run mothur to do a unique on the fasta a names pair
-        mBatchFile = [
-            r'set.dir(input={})'.format(sample_dir),
-            r'set.dir(output={})'.format(sample_dir),
-            r'unique.seqs(fasta={}, name={})'.format(path_to_fasta_cropped, path_to_names_file_to_align),
-            r'summary.seqs(fasta={0}/coral_fasta_aligned_and_cropped.unique.fasta, name={0}/coral_fasta_aligned_and_cropped.names)'.format(sample_dir)
-        ]
-
-        mBatchFile_path = '{}/mBatchFile_two'.format(sample_dir)
-
-        # write out batch file
-        with open(mBatchFile_path, 'w') as f:
-            for line in mBatchFile:
-                f.write('{}\n'.format(line))
-
-        # run the mothur processing
-        # subprocess.run(['mothur', r'{0}'.format(mBatchFile_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        subprocess.run(['mothur', r'{}'.format(mBatchFile_path)])
-
-        # at this point we should have a new .fasta file and a new .names file
-        # we will then want to align these
-        # this seems to have worked really well. We are down to 149 sequences
-
-        # now we need to re-align these sequencs to get an alignment to work with
-        input_fasta_for_alignment = '{}/coral_fasta_aligned_and_cropped.unique.fasta'.format(sample_dir)
-        output_fasta_aligned= '{}/coral_aligned_fasta_for_networks.fasta'.format(sample_dir)
-        align_fasta(input_fasta_path=input_fasta_for_alignment, output_fasta_path=output_fasta_aligned)
-        # at this point we have the .names file which is coral_fasta_aligned_and_cropped.names and the aligned
-        # fasta that is coral_aligned_fasta_for_networks.fasta
-    apples = 'asdf'
-
-
-def remove_gaps_from_alignment(input_fasta_alignment_path):
-    with open(input_fasta_alignment_path, 'r') as f:
-        fasta_to_remove_gaps = [line.rstrip() for line in f]
-    fasta_without_gaps = []
-    for i in range(len(fasta_to_remove_gaps)):
-        if i % 2 == 1:
-            fasta_without_gaps.append(fasta_to_remove_gaps[i].replace('-', ''))
-        else:
-            fasta_without_gaps.append(fasta_to_remove_gaps[i])
-    # now write out the fasta without gaps
-    with open(input_fasta_alignment_path, 'w') as f:
-        for line in fasta_without_gaps:
-            f.write('{}\n'.format(line))
-
-
-def align_fasta(input_fasta_path, output_fasta_path):
-    # now perform the alignment with MAFFT
-    mafft = local["mafft-linsi"]
-    out_file = input_fasta_path.replace('.fasta', '_aligned.fasta')
-    # now run mafft including the redirect
-    (mafft['--thread', -1, input_fasta_path] > out_file)()
-    # read in the interleaved aligned fasta
-    with open(out_file, 'r') as f:
-        aligned_fasta_interleaved = [line.rstrip() for line in f]
-    # make a serial fasta from the interleaved fasta
-    aligned_fasta = convert_interleaved_to_sequencial_fasta_two(aligned_fasta_interleaved)
-    # write out the fasta to be cropped
-    with open(output_fasta_path, 'w') as f:
-        for line in aligned_fasta:
-            f.write('{}\n'.format(line))
-
-
-def convert_interleaved_to_sequencial_fasta_two(fasta_in):
-    fasta_out = []
-    for i in range(len(fasta_in)):
-        if fasta_in[i].startswith('>'):
-            if fasta_out:
-                # if the fasta is not empty then this is not the first
-                fasta_out.append(temp_seq_str)
-            #else then this is the first sequence and there is no need to add the seq.
-            temp_seq_str = ''
-            fasta_out.append(fasta_in[i])
-        else:
-            temp_seq_str = temp_seq_str + fasta_in[i]
-    #finally we need to add in the last sequence
-    fasta_out.append(temp_seq_str)
-    return fasta_out
 
 # This is the code for plotting the PCOA of 18s with the ITS2 zooxs data below
 
@@ -670,7 +517,6 @@ def get_colour_list():
                   "#545C46", "#866097", "#365D25", "#252F99", "#00CCFF", "#674E60", "#FC009C", "#92896B"]
     return colour_list
 
-# generate_fig('full')
 
 class EighteenSAnalysis:
     def __init__(self):
@@ -2662,6 +2508,169 @@ class EighteenSAnalysis:
             un_files = os.listdir(self.current_dir)
             for un_file in un_files:
                 subprocess.run(['gzip', '{}/{}'.format(self.current_dir, un_file)])
+
+    class NetworkStuff:
+        """
+        # TODO this is still work in progress. I have just shoved all of the methods that were related to this
+        in progress work in to this class as a holder. It still needs to be properly refactored.
+        I want to make splits tree networks of the 18s sequences. To do this i will need to get the seuqences in better
+        shape so that I can align them. Currently they are of very different lengths. I will go back into each of the
+        sample folders and I will align the latest fasta file and then do cropping using 90% cutoff or something.
+        this means that I will get rid of gaps at the beginning and end of the alignment if the column position has gaps for
+        90% of the sequences.
+        On these cropped sequences I will then re-unique and then finally realign the sequences. These sequences will then
+        be ready for making networks from. It may also be a good idea to work with these sequences for all of the work we have
+        done up until now.
+
+        """
+        def __init__(self, parent):
+            self.parent = parent
+
+        def prepare_sequences_for_networking(self):
+
+            # for each coral sample do the alignment and cropping and re-alignment of sequences first
+            for ind in self.parent.coral_info_df_for_figures.index.values.tolist():
+                sample_dir = self.parent.coral_info_df_for_figures.loc[ind, 'sample_dir']
+
+                if os.path.isfile('{}/coral_aligned_fasta_for_networks.fasta'.format(sample_dir)) and os.path.isfile(
+                        '{}/coral_fasta_aligned_and_cropped.names'.format(sample_dir)):
+                    # then this sample has already been completed
+                    continue
+
+                print('Processing {}'.format(ind))
+                sample_genus = self.parent.coral_info_df_for_figures.loc[ind, 'genus']
+
+                current_fasta_file_path = '{}/stability.trim.contigs.good.unique.abund.pcr.fasta'.format(sample_dir)
+                with open(current_fasta_file_path, 'r') as f:
+                    current_fasta_file = [line.rstrip() for line in f]
+                current_fasta_dict = {current_fasta_file[i][1:].split('\t')[0]: current_fasta_file[i + 1] for i in
+                                      range(0, len(current_fasta_file), 2)}
+
+                current_names_file_path = '{}/stability.trim.contigs.good.abund.pcr.names'.format(sample_dir)
+                with open(current_names_file_path, 'r') as f:
+                    current_names_file = [line.rstrip() for line in f]
+                current_names_dict = {line.split('\t')[0]: line for line in current_names_file}
+
+                # this fasta currently contains all of the sequences including non-genus specific seqs
+                # we are only interested in the genus specific seqs so lets pull these out using the
+                # coral_dict.pickle file
+                coral_seq_dict = pickle.load(open('{}/coral_dict.pickle'.format(sample_dir), 'rb'))
+
+                fasta_for_alignment = []
+                names_for_alignment = []
+                for seq_key, coral_genus in coral_seq_dict.items():
+                    if coral_genus.upper() == sample_genus.upper():
+                        fasta_for_alignment.extend(['>{}'.format(seq_key), current_fasta_dict[seq_key]])
+                        names_for_alignment.append(current_names_dict[seq_key])
+
+                # here we have a fasta file and a names file pair that are just the coral genus in question.
+                # we should now write these out and then align them. Then do the cropping
+                path_to_fasta_file_to_align = '{}/coral_fasta_to_align_and_crop.fasta'.format(sample_dir)
+                path_to_names_file_to_align = '{}/coral_names.names'.format(sample_dir)
+
+                # write out the fasta
+                with open(path_to_fasta_file_to_align, 'w') as f:
+                    for line in fasta_for_alignment:
+                        f.write('{}\n'.format(line))
+
+                # write out the .names file
+                with open(path_to_names_file_to_align, 'w') as f:
+                    for line in names_for_alignment:
+                        f.write('{}\n'.format(line))
+
+                aligned_fasta_path = '{}/coral_fasta_aligned_to_crop.fasta'.format(sample_dir)
+
+                self.align_fasta(input_fasta_path=path_to_fasta_file_to_align, output_fasta_path=aligned_fasta_path)
+
+                # this method takes an input path and an output path
+                path_to_fasta_cropped = '{}/coral_fasta_aligned_and_cropped.fasta'.format(sample_dir)
+
+                # at this point we have the original fasta aligned and cropped.
+                cropping.crop_fasta(input_path=aligned_fasta_path, output_path=path_to_fasta_cropped, cutoff=0.9)
+
+                # we now need to remove the gaps from the sequences else we end up with a strange '.' character in our fasta
+                # file after the seqs.unique
+                # read in the aligned fasta file
+
+                self.remove_gaps_from_alignment(input_fasta_alignment_path=path_to_fasta_cropped)
+
+                # now we re run mothur to do a unique on the fasta a names pair
+                mBatchFile = [
+                    r'set.dir(input={})'.format(sample_dir),
+                    r'set.dir(output={})'.format(sample_dir),
+                    r'unique.seqs(fasta={}, name={})'.format(path_to_fasta_cropped, path_to_names_file_to_align),
+                    r'summary.seqs(fasta={0}/coral_fasta_aligned_and_cropped.unique.fasta, name={0}/coral_fasta_aligned_and_cropped.names)'.format(
+                        sample_dir)
+                ]
+
+                mBatchFile_path = '{}/mBatchFile_two'.format(sample_dir)
+
+                # write out batch file
+                with open(mBatchFile_path, 'w') as f:
+                    for line in mBatchFile:
+                        f.write('{}\n'.format(line))
+
+                # run the mothur processing
+                # subprocess.run(['mothur', r'{0}'.format(mBatchFile_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                subprocess.run(['mothur', r'{}'.format(mBatchFile_path)])
+
+                # at this point we should have a new .fasta file and a new .names file
+                # we will then want to align these
+                # this seems to have worked really well. We are down to 149 sequences
+
+                # now we need to re-align these sequencs to get an alignment to work with
+                input_fasta_for_alignment = '{}/coral_fasta_aligned_and_cropped.unique.fasta'.format(sample_dir)
+                output_fasta_aligned = '{}/coral_aligned_fasta_for_networks.fasta'.format(sample_dir)
+                self.align_fasta(input_fasta_path=input_fasta_for_alignment, output_fasta_path=output_fasta_aligned)
+                # at this point we have the .names file which is coral_fasta_aligned_and_cropped.names and the aligned
+                # fasta that is coral_aligned_fasta_for_networks.fasta
+            apples = 'asdf'
+
+        def remove_gaps_from_alignment(self, input_fasta_alignment_path):
+            with open(input_fasta_alignment_path, 'r') as f:
+                fasta_to_remove_gaps = [line.rstrip() for line in f]
+            fasta_without_gaps = []
+            for i in range(len(fasta_to_remove_gaps)):
+                if i % 2 == 1:
+                    fasta_without_gaps.append(fasta_to_remove_gaps[i].replace('-', ''))
+                else:
+                    fasta_without_gaps.append(fasta_to_remove_gaps[i])
+            # now write out the fasta without gaps
+            with open(input_fasta_alignment_path, 'w') as f:
+                for line in fasta_without_gaps:
+                    f.write('{}\n'.format(line))
+
+        def align_fasta(self, input_fasta_path, output_fasta_path):
+            # now perform the alignment with MAFFT
+            mafft = local["mafft-linsi"]
+            out_file = input_fasta_path.replace('.fasta', '_aligned.fasta')
+            # now run mafft including the redirect
+            (mafft['--thread', -1, input_fasta_path] > out_file)()
+            # read in the interleaved aligned fasta
+            with open(out_file, 'r') as f:
+                aligned_fasta_interleaved = [line.rstrip() for line in f]
+            # make a serial fasta from the interleaved fasta
+            aligned_fasta = self.convert_interleaved_to_sequencial_fasta_two(aligned_fasta_interleaved)
+            # write out the fasta to be cropped
+            with open(output_fasta_path, 'w') as f:
+                for line in aligned_fasta:
+                    f.write('{}\n'.format(line))
+
+        def convert_interleaved_to_sequencial_fasta_two(self, fasta_in):
+            fasta_out = []
+            for i in range(len(fasta_in)):
+                if fasta_in[i].startswith('>'):
+                    if fasta_out:
+                        # if the fasta is not empty then this is not the first
+                        fasta_out.append(temp_seq_str)
+                    # else then this is the first sequence and there is no need to add the seq.
+                    temp_seq_str = ''
+                    fasta_out.append(fasta_in[i])
+                else:
+                    temp_seq_str = temp_seq_str + fasta_in[i]
+            # finally we need to add in the last sequence
+            fasta_out.append(temp_seq_str)
+            return fasta_out
 
 eighteen_s_analysis = EighteenSAnalysis()
 # eighteen_s_analysis.do_seq_qc()
