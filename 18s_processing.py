@@ -26,463 +26,6 @@ from plumbum import local
 
 
 
-
-
-# This is the code for plotting the PCOA of 18s with the ITS2 zooxs data below
-
-def plot_pcoa_spp_18s_its2(is_three_d = False):
-    info_df = generate_info_df_for_samples()
-    fig_info_df = generate_fig_indo_df(info_df)
-
-
-    # get the pcoa df
-    pcoa_df_dict = generate_bray_curtis_distance_and_pcoa_spp()
-    # setup figure
-    spp_list = ['Porites', 'Pocillopora', 'Millepora']
-
-    fig = plt.figure(figsize=(18, 10))
-
-    # here we can read in the its2 data that we are going to need
-    # read in the SymPortal relative abundance output
-
-    path_to_tab_delim_count_DIV = '/home/humebc/projects/tara/initial_its2_processing/2018-10-21_08-59-37.620726.DIVs.relative.txt'
-
-    path_to_tab_delim_count_type = '/home/humebc/projects/tara/initial_its2_processing/34_init_tara_standalone_all_samps_151018_2018-10-21_08-45-56.507454.profiles.relative.txt'
-
-    smp_id_to_smp_name_dict, smp_name_to_smp_id_dict, sp_output_df_div = process_div_df(path_to_tab_delim_count_DIV)
-    smp_name_to_smp_id_dict_short = {k.split('_')[0]:v for k, v in smp_name_to_smp_id_dict.items()}
-    # now read in a process the type df too.
-
-    colour_dict_type, sp_output_df_type, sorted_type_prof_names_by_local_abund, max_n_cols_type, max_n_rows_type, num_leg_cells_type, = process_type_df(
-        path_to_tab_delim_count_type)
-
-    colour_dict_div, max_n_cols_div, max_n_rows_div, num_leg_cells_div, ordered_list_of_seqs = get_div_colour_dict_and_ordered_list_of_seqs(
-        sp_output_df_div)
-
-    # the ordered_list_of_seqs can also be used for the plotting order
-
-    # we should consider doing a plot per clade but for the time being lets start by doing a single plot that will
-    # contain all of the clades
-
-    # if we are plotting this in companion with an ITS2 type profile output then we will be passed a
-    # sample_order_list. It is very useful to have the ITS2 type profile output figure and the seq figure
-    # in the same sample order for direct comparison
-
-    ordered_sample_list = sp_output_df_type.index.values.tolist()
-    # pickle.dump(ordered_sample_list, open('ordered_sample_list_for_18s_work.pickle', 'wb'))
-    # let's reorder the columns and rows of the sp_output_df according to the sequence sample and sequence
-    # order so that plotting the data is easier
-
-    sp_output_df_div = sp_output_df_div[ordered_list_of_seqs]
-
-
-
-    # this is going to be quite a complicated setup but should be worth it
-    #
-    gs = plt.GridSpec(8, 21, figure=fig, height_ratios=[3, 0.2, 0.5, 1, 0.1, 1, 0.1, 1], width_ratios=[0.2, 0.2, 1, 0.2, 1, 0.2, 1, 1.4, 1, 0.2, 1, 0.2, 1, 1.4,1, 0.2, 1, 0.2, 1, 0.2, 0.4])
-    # we can have several axes lists so that we can populate them one by one
-    # first lets make the pcoa plot axes list
-    pcoa_axes_list = []
-    #porites ax
-    pcoa_axes_list.append(plt.subplot(gs[0, 2:7]))
-    # pocillopora ax
-    # test = plt.subplot(gs[0, 7])
-    pcoa_axes_list.append(plt.subplot(gs[0, 8:13]))
-    # millepora ax
-    pcoa_axes_list.append(plt.subplot(gs[0, 14:19]))
-
-    # now make the its2 matrix of plots
-    its2_axes_list = []
-    for start_y, start_x in [(3,2),(3,8),(3,14)]:
-        for i in range(0, 5, 2):
-            for j in range(0, 5, 2):
-                ind_x = j + start_x
-                ind_y = i + start_y
-                its2_axes_list.append(plt.subplot(gs[ind_y, ind_x]))
-
-    #todo we can add the rest of the axes e.g. for the headers later on
-
-    # plotting of the PCOAs
-    for spp in spp_list:
-
-        ax = pcoa_axes_list[spp_list.index(spp)]
-
-
-        df_of_spp = pcoa_df_dict[spp]
-
-        # x values
-        x_values = df_of_spp['PC1'].values.tolist()[:-1]
-
-        # y values
-        y_values = df_of_spp['PC2'].values.tolist()[:-1]
-
-
-
-        samples_of_spp = df_of_spp.index.values.tolist()[:-1]
-        # get list of colours and list of markers
-        # colours can designate islands
-        # we will need to look up the colour according to the its2 type profile designation of the sample
-
-        # here we have to see which of the sample names in samples_of_spp are available in the sp_output_df_div
-        island_colour_list = []
-        for smpl_name in samples_of_spp:
-            try:
-                max_type = sp_output_df_type.loc[smp_name_to_smp_id_dict_short[smpl_name]].idxmax()
-                island_colour_list.append(colour_dict_type[max_type])
-            except:
-                island_colour_list.append('#000000')
-        # island_colour_dict = {'ISLAND06':'#C0C0C0', 'ISLAND10':'#808080', 'ISLAND15':'#000000'}
-        # island_colour_list = [island_colour_dict[fig_info_df.loc[smp, 'island']] for smp in samples_of_spp]
-
-        # shapes can designate sites
-        marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
-        marker_list = [marker_dict[fig_info_df.loc[smp, 'island']] for smp in samples_of_spp]
-
-
-        # plot the points
-        for x_val, y_val, col, mark in zip(x_values, y_values, island_colour_list, marker_list):
-            ax.scatter(x_val, y_val, c=col, marker=mark)
-
-        # add axes labels
-        ax.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp['PC1'][-1]))
-        ax.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp['PC2'][-1]))
-        # set axis title
-        ax.set_title('{}'.format(spp), fontsize='large', fontweight='bold')
-
-    add_labels_its2(its2_axes_list)
-
-    # here we should start to take on th plotting of the ITS2 data
-    plot_data_axes_its2(its2_axes_list, colour_dict_div, colour_dict_type, info_df, ordered_sample_list,
-                   smp_id_to_smp_name_dict, smp_name_to_smp_id_dict_short, sp_output_df_div, sp_output_df_type)
-
-    legend_ax = plt.subplot(gs[0, 20])
-    remove_axes_but_allow_labels(legend_ax)
-    vert_leg_axis_with_its2(legend_ax, marker_dict)
-
-    # now put in a labelling for the its2 plots to show the its2 sequences, vs its2 type profiles
-    for i in range(3, 8, 2):
-        ax = plt.subplot(gs[i, 20])
-        remove_axes_but_allow_labels(ax)
-        ax.set_xlim(0,1)
-        ax.set_ylim(0,1)
-        ax.text(s='its2 seqs', x=0, y=0.5)
-        ax.text(s='its2 type profiles', x=0, y=0)
-
-    fig.show()
-
-    plt.savefig('spp_pcoa_with_its2.png'.format())
-    plt.savefig('spp_pcoa_with_its2.svg'.format())
-
-    return
-
-def vert_leg_axis_with_its2(legend_ax, marker_dict):
-    legend_ax.set_ylim(0, 1)
-    legend_ax.set_xlim(0, 1)
-    legend_ax.invert_yaxis()
-    number_of_icons = 3
-    island_list = ['ISLAND06', 'ISLAND10', 'ISLAND15']
-
-    icon_list = []
-    # first populate the island icons
-    # for site in site_list:
-    #     icon_list.append((colour_dict[site], marker_dict['ISLAND06']))
-    # then populate the site icons
-    for island in island_list:
-        icon_list.append(('#808080', marker_dict[island]))
-    # lets assume that the axis is divided into 20 spaces for icons
-    max_number_icons = 10
-    # the  icon position should be mid way so max_number_icons
-    # first icon position
-    first_icon_position = int((max_number_icons - number_of_icons) / 2)
-    pos_counter = first_icon_position
-    for i in range(len(icon_list)):
-        y_val_for_icon_and_text = (1 / max_number_icons) * pos_counter
-        x_val_for_icon = 0.4
-        x_val_for_text = x_val_for_icon + 0.4
-        legend_ax.scatter(x=x_val_for_icon, y=y_val_for_icon_and_text, c=icon_list[i][0], marker=icon_list[i][1], s=100)
-
-        if int(i / 3) == 0:
-            legend_ax.text(s=island_list[i], x=x_val_for_text, y=y_val_for_icon_and_text)
-
-        pos_counter += 1
-
-def add_labels_its2(ax_list):
-    ax_list[0].set_title('ISLAND06', fontsize='large', fontweight='bold')
-    ax_list[1].set_title('ISLAND10', fontsize='large', fontweight='bold')
-    ax_list[2].set_title('ISLAND15', fontsize='large', fontweight='bold')
-
-    ax_list[9].set_title('ISLAND06', fontsize='large', fontweight='bold')
-    ax_list[10].set_title('ISLAND10', fontsize='large', fontweight='bold')
-    ax_list[11].set_title('ISLAND15', fontsize='large', fontweight='bold')
-
-    ax_list[18].set_title('ISLAND06', fontsize='large', fontweight='bold')
-    ax_list[19].set_title('ISLAND10', fontsize='large', fontweight='bold')
-    ax_list[20].set_title('ISLAND15', fontsize='large', fontweight='bold')
-
-    ax_list[0].set_ylabel('SITE 1' , fontsize='large', fontweight='bold')
-    ax_list[3].set_ylabel('SITE 2', fontsize='large', fontweight='bold')
-    ax_list[6].set_ylabel('SITE 3', fontsize='large', fontweight='bold')
-
-def plot_data_axes_its2(ax_list, colour_dict_div, colour_dict_type, info_df, ordered_sample_list, smp_id_to_smp_name_dict,
-                   smp_name_to_smp_id_dict_short, sp_output_df_div, sp_output_df_type):
-    ax_count = 0
-
-    for spp in ['PORITES', 'POCILLOPORA', 'MILLEPORA']:
-        for site in ['SITE01', 'SITE02', 'SITE03']:
-            for location in ['ISLAND06', 'ISLAND10', 'ISLAND15']:
-
-                ax = ax_list[ax_count]
-                patches_list = []
-                ind = 0
-                colour_list = []
-
-                # for each set of location, site and spp, we basically want to get a list of the samples
-                # that meet the set criteria, we then want to plot samples according to the ordered_sample_list
-                # order which will be in IDs. As such we will have to convert the sample_name in the info_df
-                # to a sample ID using the smp_name_to_smp_id_dict.
-
-                # get sample_names that fit the requirements
-                sample_names_of_set = info_df.loc[
-                    (info_df['location'] == location) &
-                    (info_df['site'] == site) &
-                    (info_df['spp_water'] == spp)
-                    ].index.values.tolist()
-
-                if spp == 'PORITES':
-                    if 'CO0001674' in sample_names_of_set:
-                        sample_names_of_set.remove('CO0001674')
-                        sample_names_of_set.remove('CO0001669')
-
-                # convert these to sample IDs
-                # The sample names in symportal are actually the full file names version rather than
-                # the shorter versions in the info_df. As such we should we will have to do a conversion here
-                # full_sample_names = [
-                #     '_'.join(info_df.loc[smp_name]['fastq_fwd_file_path'].split('/')[-1].split('_')[:3]) for smp_name in
-                #     sample_names_of_set]
-                try:
-                    smple_ids_of_set = []
-                    for smp_name in sample_names_of_set:
-                        smple_ids_of_set.append(smp_name_to_smp_id_dict_short[smp_name])
-                    # smple_ids_of_set = [smp_name_to_smp_id_dict[smp_name] for smp_name in full_sample_names]
-                except:
-                    apples = 'asdf'
-                # now we want to plot in the order of the ordered_sample_list
-                ordered_smple_ids_of_set = [smpl_id for smpl_id in ordered_sample_list if smpl_id in smple_ids_of_set]
-
-
-
-                num_smp_in_this_subplot = len(ordered_smple_ids_of_set)
-                x_tick_label_list = []
-
-                for smple_id_to_plot in ordered_smple_ids_of_set:
-
-
-                    # General plotting
-                    sys.stdout.write('\rPlotting sample: {}'.format(smple_id_to_plot))
-                    x_tick_label_list.append(smp_id_to_smp_name_dict[smple_id_to_plot].split('_')[0])
-                    # for each sample we will start at 0 for the y and then add the height of each bar to this
-
-                    # PLOT DIVs
-                    plot_div_over_type_its2(colour_dict_div, colour_list, ind, patches_list, smple_id_to_plot,
-                                       sp_output_df_div)
-
-                    # PLOT type
-                    plot_type_under_div_its2(colour_dict_type, colour_list, ind, patches_list, smple_id_to_plot,
-                                        sp_output_df_type)
-                    ind += 1
-
-
-                paint_rect_to_axes_div_and_type_its2(ax=ax, colour_list=colour_list,
-                                                num_smp_in_this_subplot=num_smp_in_this_subplot,
-                                                patches_list=patches_list,
-                                                x_tick_label_list=x_tick_label_list,
-                                                max_num_smpls_in_subplot=10)
-
-                ax_count += 1
-
-def paint_rect_to_axes_div_and_type_its2(ax, colour_list, num_smp_in_this_subplot,  patches_list, x_tick_label_list=None,  max_num_smpls_in_subplot=10):
-    # We can try making a custom colour map
-    # https://matplotlib.org/api/_as_gen/matplotlib.colors.ListedColormap.html
-    this_cmap = ListedColormap(colour_list)
-    # here we should have a list of Rectangle patches
-    # now create the PatchCollection object from the patches_list
-    patches_collection = PatchCollection(patches_list, cmap=this_cmap)
-    patches_collection.set_array(np.arange(len(patches_list)))
-    # if n_subplots is only 1 then we can refer directly to the axarr object
-    # else we will need ot reference the correct set of axes with i
-    # Add the pathces to the axes
-    ax.add_collection(patches_collection)
-    ax.autoscale_view()
-    ax.figure.canvas.draw()
-    # also format the axes.
-    # make it so that the x axes is constant length
-    ax.set_xlim(0 - 0.5, max_num_smpls_in_subplot - 0.5)
-    ax.set_ylim(-0.2, 1)
-    # ax.set_xticks(range(num_smp_in_this_subplot))
-    # ax.set_xticklabels(x_tick_label_list, rotation='vertical', fontsize=6)
-
-    remove_axes_but_allow_labels(ax)
-
-    # as well as getting rid of the top and right axis splines
-    # I'd also like to restrict the bottom spine to where there are samples plotted but also
-    # maintain the width of the samples
-    # I think the easiest way to do this is to hack a bit by setting the x axis spines to invisible
-    # and then drawing on a line at y = 0 between the smallest and largest ind (+- 0.5)
-    # ax.spines['bottom'].set_visible(False)
-    ax.add_line(Line2D((0 - 0.5, num_smp_in_this_subplot - 0.5), (0, 0), linewidth=2, color='black'))
-
-def plot_div_over_type_its2(colour_dict_div, colour_list, ind, patches_list, smple_id_to_plot, sp_output_df_div):
-    bottom_div = 0
-    # for each sequence, create a rect patch
-    # the rect will be 1 in width and centered about the ind value.
-    for seq in list(sp_output_df_div):
-        # class matplotlib.patches.Rectangle(xy, width, height, angle=0.0, **kwargs)
-        rel_abund_div = sp_output_df_div.loc[smple_id_to_plot, seq]
-        if rel_abund_div > 0:
-            patches_list.append(Rectangle((ind - 0.5, bottom_div), 1, rel_abund_div, color=colour_dict_div[seq]))
-            # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
-            colour_list.append(colour_dict_div[seq])
-            bottom_div += rel_abund_div
-
-def plot_type_under_div_its2(colour_dict_type, colour_list, ind, patches_list, smple_id_to_plot, sp_output_df_type):
-    # the idea of the type is to put it as a reflection below the y=0 line
-    # as such we should just want to make everything negative
-    bottom_type = 0
-    # for each sequence, create a rect patch
-    # the rect will be 1 in width and centered about the ind value.
-    # we want to plot the rects so that they add to 1. As such we want to divide
-    # each value by the total for that sample.
-    tot_for_sample = sp_output_df_type.loc[smple_id_to_plot].sum()
-    for its2_profile in list(sp_output_df_type):
-        rel_abund = sp_output_df_type.loc[smple_id_to_plot, its2_profile]
-        if rel_abund > 0:
-            depth = -0.2 * (rel_abund / tot_for_sample)
-            patches_list.append(
-                Rectangle((ind - 0.5, bottom_type), 1, depth,
-                          color=colour_dict_type[its2_profile]))
-            # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
-            colour_list.append(colour_dict_type[its2_profile])
-            bottom_type += depth
-
-def get_div_colour_dict_and_ordered_list_of_seqs(sp_output_df_div):
-    colour_palette_div = get_colour_list()
-    grey_palette_div = ['#D0CFD4', '#89888D', '#4A4A4C', '#8A8C82', '#D4D5D0', '#53544F']
-    # get a list of the sequences in order of their abundance and use this list to create the colour dict
-    # the abundances can be got by simply summing up the columns making sure to ommit the last columns
-    abundance_dict = {}
-    for col in list(sp_output_df_div):
-        abundance_dict[col] = sum(sp_output_df_div[col])
-    # get the names of the sequences sorted according to their totalled abundance
-    ordered_list_of_seqs = [x[0] for x in sorted(abundance_dict.items(), key=lambda x: x[1], reverse=True)]
-    # create the colour dictionary that will be used for plotting by assigning a colour from the colour_palette
-    # to the most abundant seqs first and after that cycle through the grey_pallette assigning colours
-    # If we aer only going to have a legend that is cols x rows as shown below, then we should only use
-    # that many colours in the plotting.
-    max_n_cols = 8
-    max_n_rows = 7
-    num_leg_cells = max_n_cols * max_n_rows
-    colour_dict_div = {}
-    for i in range(len(ordered_list_of_seqs)):
-        if i < num_leg_cells:
-            colour_dict_div[ordered_list_of_seqs[i]] = colour_palette_div[i]
-        else:
-            grey_index = i % len(grey_palette_div)
-            colour_dict_div[ordered_list_of_seqs[i]] = grey_palette_div[grey_index]
-    return colour_dict_div, max_n_cols, max_n_rows, num_leg_cells, ordered_list_of_seqs
-
-def process_type_df(path_to_tab_delim_count_type):
-    sp_output_df_type = pd.read_csv(path_to_tab_delim_count_type, sep='\t', lineterminator='\n',
-                                    skiprows=[0, 1, 2, 3, 5],
-                                    header=None)
-    # get a list of tups that are the seq names and the abundances zipped together
-    type_profile_to_abund_tup_list = [(name, int(abund)) for name, abund in
-                                      zip(sp_output_df_type.iloc[1][2:].values.tolist(),
-                                          sp_output_df_type.iloc[0][2:].values.tolist())]
-    # convert the names that are numbers into int strings rather than float strings.
-    int_temp_list = []
-    for name_abund_tup in type_profile_to_abund_tup_list:
-        try:
-            int_temp_list.append((str(int(name_abund_tup[0])), int(name_abund_tup[1])))
-        except:
-            int_temp_list.append((name_abund_tup[0], int(name_abund_tup[1])))
-    type_profile_to_abund_tup_list = int_temp_list
-    # need to drop the rows that contain the sequence accession and species descriptions
-    for i, row_name in enumerate(sp_output_df_type.iloc[:, 0]):
-        if 'Sequence accession' in row_name:
-            # then we want to drop all rows from here until the end
-            index_to_drop_from = i
-            break
-    sp_output_df_type = sp_output_df_type.iloc[:index_to_drop_from]
-    # now drop the sample name columns
-    sp_output_df_type.drop(columns=1, inplace=True)
-    # make headers
-    sp_output_df_type.columns = ['sample_id'] + [a[0] for a in type_profile_to_abund_tup_list]
-    # now drop the local abund row and promote the its2_type_prof names to columns headers.
-    sp_output_df_type.drop(index=[0, 1], inplace=True)
-    sp_output_df_type = sp_output_df_type.set_index(keys='sample_id', drop=True).astype('float')
-
-    max_n_cols = 4
-    max_n_rows = 7
-    num_leg_cells = max_n_cols * max_n_rows
-
-    # we will use the col headers as the its2 type profile order for plotting but we
-    # we should colour according to the abundance of the its2 type profiles
-    # as we don't want to run out of colours by the time we get to profiles that are very abundant.
-    # The sorted_type_prof_names_by_local_abund object has the names of the its2 type profile in order of abundance
-    # we will use the index order as the order of samples to plot
-    # create the colour dictionary that will be used for plotting by assigning a colour from the colour_palette
-    # to the most abundant seqs first and after that cycle through the grey_pallette assigning colours
-    sorted_type_prof_names_by_local_abund = [a[0] for a in
-                                             sorted(type_profile_to_abund_tup_list, key=lambda x: x[1], reverse=True)]
-
-    # we should plot sample by sample and its2 type by its2 type in the order of the output
-    # the problem with doing he convert_to_pastel is that the colours become very similar
-    # colour_palette = convert_to_pastel(get_colour_list())
-    # Rather, I will attempt to generate a quick set of colours that are pastel and have a minimum distance
-    # rule for any colours that are generated from each other.
-    # let's do this for 50 colours to start with and see how long it takes.
-    # turns out it is very quick. Easily quick enough to do dynamically.
-    # When working with pastel colours (i.e. mixing with 255,255,255 it is probably best to work with a smaller dist cutoff
-
-    colour_dict_type = pickle.load(open('/home/humebc/projects/tara/initial_its2_processing/colour_dict_type.pickle'.format(os.getcwd()), 'rb'))
-
-    return colour_dict_type, sp_output_df_type, sorted_type_prof_names_by_local_abund, max_n_cols, max_n_rows, num_leg_cells
-
-def process_div_df(path_to_tab_delim_count_DIV):
-    sp_output_df = pd.read_csv(path_to_tab_delim_count_DIV, sep='\t', lineterminator='\n', header=0, index_col=0)
-
-    # In order to be able to drop the DIV row at the end and the meta information rows, we should
-    # drop all rows that are after the DIV column. We will pass in an index value to the .drop
-    # that is called here. To do this we need to work out which index we are working with
-    index_values_as_list = sp_output_df.index.values.tolist()
-    for i in range(-1, -(len(index_values_as_list)), -1):
-        if index_values_as_list[i].startswith('DIV'):
-            # then this is the index (in negative notation) that we need to cut from
-            meta_index_to_cut_from = i
-            break
-    sp_output_df = sp_output_df.iloc[:meta_index_to_cut_from]
-
-    # create sample id to sample name dict
-    smp_id_to_smp_name_dict = {ID: '_'.join(nm.split('_')[:3]) for ID, nm in
-                               zip(sp_output_df.index.values.tolist(), sp_output_df['sample_name'].values.tolist())}
-    smp_name_to_smp_id_dict = {'_'.join(nm.split('_')[:3]): ID for ID, nm in
-                               zip(sp_output_df.index.values.tolist(), sp_output_df['sample_name'].values.tolist())}
-
-    # now lets drop the QC columns from the SP output df and also drop the clade summation columns
-    # we will be left with just clumns for each one of the sequences found in the samples
-    sp_output_df.drop(columns=['sample_name', 'noName Clade A', 'noName Clade B', 'noName Clade C', 'noName Clade D',
-                               'noName Clade E', 'noName Clade F', 'noName Clade G', 'noName Clade H',
-                               'noName Clade I', 'raw_contigs', 'post_qc_absolute_seqs', 'post_qc_unique_seqs',
-                               'post_taxa_id_absolute_symbiodinium_seqs', 'post_taxa_id_unique_symbiodinium_seqs',
-                               'post_taxa_id_absolute_non_symbiodinium_seqs',
-                               'post_taxa_id_unique_non_symbiodinium_seqs',
-                               'size_screening_violation_absolute', 'size_screening_violation_unique',
-                               'post_med_absolute', 'post_med_unique'
-                               ], inplace=True)
-    sp_output_df = sp_output_df.astype('float')
-    return smp_id_to_smp_name_dict, smp_name_to_smp_id_dict, sp_output_df
-
-
 def get_colour_list():
     colour_list = ["#FFFF00", "#1CE6FF", "#FF34FF", "#FF4A46", "#008941", "#006FA6", "#A30059", "#FFDBE5",
                   "#7A4900", "#0000A6", "#63FFAC", "#B79762", "#004D43", "#8FB0FF", "#997D87", "#5A0007", "#809693",
@@ -730,6 +273,41 @@ class EighteenSAnalysis:
             ax.set_yticks([])
             ax.minorticks_off()
 
+        @staticmethod
+        def _vert_leg_axis(colour_dict, legend_ax, marker_dict):
+            legend_ax.set_ylim(0, 1)
+            legend_ax.set_xlim(0, 1)
+            legend_ax.invert_yaxis()
+            number_of_icons = 6
+            island_list = ['ISLAND06', 'ISLAND10', 'ISLAND15']
+            site_list = ['SITE01', 'SITE02', 'SITE03']
+            icon_list = []
+            # first populate the island icons
+            for site in site_list:
+                icon_list.append((colour_dict[site], marker_dict['ISLAND06']))
+            # then populate the site icons
+            for island in island_list:
+                icon_list.append((colour_dict['SITE01'], marker_dict[island]))
+            # lets assume that the axis is divided into 20 spaces for icons
+            max_number_icons = 20
+            # the  icon position should be mid way so max_number_icons
+            # first icon position
+            first_icon_position = int((max_number_icons - number_of_icons) / 2)
+            pos_counter = first_icon_position
+            for i in range(len(icon_list)):
+                y_val_for_icon_and_text = (1 / max_number_icons) * pos_counter
+                x_val_for_icon = 0.1
+                x_val_for_text = x_val_for_icon + 0.2
+                legend_ax.scatter(x=x_val_for_icon, y=y_val_for_icon_and_text, c=icon_list[i][0],
+                                  marker=icon_list[i][1],
+                                  s=100)
+
+                if int(i / 3) == 0:
+                    legend_ax.text(s=site_list[i], x=x_val_for_text, y=y_val_for_icon_and_text)
+                elif int(i / 3) == 1:
+                    legend_ax.text(s=island_list[i % 3], x=x_val_for_text, y=y_val_for_icon_and_text)
+                pos_counter += 1
+
     class E18S_ITS2_PCOA_FIGURE(Generic_PCOA_DIST_Methods, GenericPlottingMethods):
         """A class  for holding the methods specific to plotting the figure that links the 18S ordinations with the
         zooxs its2 information.
@@ -860,7 +438,7 @@ class EighteenSAnalysis:
 
             # now put in a labelling for the its2 plots to show the its2 sequences, vs its2 type profiles
             for i in range(3, 8, 2):
-                ax = plt.subplot(gs[i, 20])
+                ax = plt.subplot(self.gs[i, 20])
                 self._remove_axes_but_allow_labels(ax)
                 ax.set_xlim(0, 1)
                 ax.set_ylim(0, 1)
@@ -922,17 +500,15 @@ class EighteenSAnalysis:
                             # for each sample we will start at 0 for the y and then add the height of each bar to this
 
                             # PLOT DIVs
-                            plot_div_over_type_its2(colour_list, ind, patches_list, smple_id_to_plot)
+                            self._plot_div_over_type_its2(colour_list, ind, patches_list, smple_id_to_plot)
 
                             # PLOT type
-                            plot_type_under_div_its2(colour_list, ind, patches_list, smple_id_to_plot)
+                            self._plot_type_under_div_its2(colour_list, ind, patches_list, smple_id_to_plot)
                             ind += 1
 
-                        self._paint_rect_to_axes_div_and_type_its2(ax=ax, colour_list=colour_list,
-                                                             num_smp_in_this_subplot=num_smp_in_this_subplot,
-                                                             patches_list=patches_list,
-                                                             x_tick_label_list=x_tick_label_list,
-                                                             max_num_smpls_in_subplot=10)
+                        self._paint_rect_to_axes_div_and_type_its2(
+                            ax=ax, colour_list=colour_list, num_smp_in_this_subplot=num_smp_in_this_subplot,
+                            patches_list=patches_list, max_num_smpls_in_subplot=10)
 
                         ax_count += 1
 
@@ -1159,341 +735,318 @@ class EighteenSAnalysis:
                 pos_counter += 1
 
     # TODO put into class
-    def plot_pcoa_spp(self, is_three_d=False):
-        """
-        This is the code for producing the 18s pcoa with either the 3rd and 4th PC underneath or a 3d graph.
-        """
+    class PlotPCoASpp(Generic_PCOA_DIST_Methods, GenericPlottingMethods):
 
-        # For each species, get the pcoa df
-        pcoa_df_dict = self._generate_bray_curtis_distance_and_pcoa_spp()
+        def __init__(self, parent):
+            EighteenSAnalysis.GenericPlottingMethods.__init__(self)
+            EighteenSAnalysis.Generic_PCOA_DIST_Methods.__init__(self, parent=parent)
+            self.colour_dict = {'SITE01': '#C0C0C0', 'SITE02': '#808080', 'SITE03': '#000000'}
+            self.marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
 
-        # setup figure
-        spp_list = ['Porites', 'Pocillopora', 'Millepora']
-        axarr = []
-        fig = plt.figure(figsize=(18, 10))
+        def plot_pcoa_spp(self, is_three_d=False):
+            """
+            This is the code for producing the 18s pcoa with either the 3rd and 4th PC underneath or a 3d graph.
+            """
 
-        gs = plt.GridSpec(3, 6, figure=fig, width_ratios=[1, 0.2, 1, 0.2, 1, 0.5], height_ratios=[1, 0.2, 1])
-        for j in range(0, 3, 2):
-            for i in range(0, 5, 2):
-                if is_three_d:
-                    if j == 1:
-                        axarr.append(fig.add_subplot(gs[j, i], projection='3d'))
+            # For each species, get the pcoa df
+            pcoa_df_dict = self._generate_bray_curtis_distance_and_pcoa_spp()
+
+            # setup figure
+            spp_list = ['Porites', 'Pocillopora', 'Millepora']
+            axarr = []
+            fig = plt.figure(figsize=(18, 10))
+
+            gs = plt.GridSpec(3, 6, figure=fig, width_ratios=[1, 0.2, 1, 0.2, 1, 0.5], height_ratios=[1, 0.2, 1])
+            for j in range(0, 3, 2):
+                for i in range(0, 5, 2):
+                    if is_three_d:
+                        if j == 1:
+                            axarr.append(fig.add_subplot(gs[j, i], projection='3d'))
+                        else:
+                            axarr.append(plt.subplot(gs[j, i]))
                     else:
                         axarr.append(plt.subplot(gs[j, i]))
-                else:
-                    axarr.append(plt.subplot(gs[j, i]))
 
-        legend_ax = plt.subplot(gs[:, 5])
-        self._remove_axes_but_allow_labels(legend_ax)
-        for spp in spp_list:
+            legend_ax = plt.subplot(gs[:, 5])
+            self._remove_axes_but_allow_labels(legend_ax)
+            for spp in spp_list:
 
-            ax = axarr[spp_list.index(spp)]
-            ax_second = axarr[spp_list.index(spp) + 3]
+                ax = axarr[spp_list.index(spp)]
+                ax_second = axarr[spp_list.index(spp) + 3]
 
-            df_of_spp = pcoa_df_dict[spp]
-
-            # x values
-            x_values = df_of_spp['PC1'].values.tolist()[:-1]
-
-            # y values
-            y_values = df_of_spp['PC2'].values.tolist()[:-1]
-
-            # z values
-            z_values = df_of_spp['PC3'].values.tolist()[:-1]
-
-            # pc4 values
-            pc4_values = df_of_spp['PC4'].values.tolist()[:-1]
-
-            samples_of_spp = df_of_spp.index.values.tolist()[:-1]
-            # get list of colours and list of markers
-            # colours can designate islands
-            colour_dict = {'SITE01': '#C0C0C0', 'SITE02': '#808080', 'SITE03': '#000000'}
-            colour_list = [colour_dict[self.coral_info_df_for_figures.loc[smp, 'site']] for smp in samples_of_spp]
-
-            # shapes can designate sites
-
-            marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
-            marker_list = [marker_dict[self.coral_info_df_for_figures.loc[smp, 'island']] for smp in samples_of_spp]
-
-            # plot the points
-            for x_val, y_val, col, mark in zip(x_values, y_values, colour_list, marker_list):
-                ax.scatter(x_val, y_val, c=col, marker=mark)
-
-            # add axes labels
-            ax.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp['PC1'][-1]))
-            ax.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp['PC2'][-1]))
-            # set axis title
-            ax.set_title('{}'.format(spp))
-            if is_three_d:
-                # then lets plot the 3d equivalent below the 3d figs
-                # plot the points
-                for x_val, y_val, z_val, col, mark in zip(x_values, y_values, z_values, colour_list, marker_list):
-                    ax_second.scatter(x_val, y_val, z_val, c=col, marker=mark)
-
-                # add axes labels
-                ax_second.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp['PC1'][-1]))
-                ax_second.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp['PC2'][-1]))
-                ax_second.set_zlabel('PC3; explained = {}'.format('%.3f' % df_of_spp['PC3'][-1]))
-
-
-            else:
-                # else lets just plot out the 3rd and 4th PCs below
-                # plot the points
-                for z_val, pc4_val, col, mark in zip(z_values, pc4_values, colour_list, marker_list):
-                    ax_second.scatter(z_val, pc4_val, c=col, marker=mark)
-
-                # add axes labels
-                ax_second.set_xlabel('PC3; explained = {}'.format('%.3f' % df_of_spp['PC3'][-1]))
-                ax_second.set_ylabel('PC4; explained = {}'.format('%.3f' % df_of_spp['PC4'][-1]))
-
-        # here we should put together the legend axis
-        self._vert_leg_axis(colour_dict, legend_ax, marker_dict)
-
-        fig.show()
-        if not is_three_d:
-            plt.savefig(os.path.join(self.figure_output_dir, 'spp_pcoa_with_pc3_pc4.png'), dpi=1200)
-            plt.savefig(os.path.join(self.figure_output_dir, 'spp_pcoa_with_pc3_pc4.svg'))
-
-    # TODO put into class
-    def plot_pcoa_spp_island(self):
-        """
-        This is the code for producing a pcoa per island per species.
-        """
-
-        # For each species get the pcoa df
-        pcoa_df_dict = self._generate_bray_curtis_distance_and_pcoa_spp_and_island()
-
-        # setup figure
-        spp_list = ['PORITES', 'POCILLOPORA', 'MILLEPORA']
-
-        island_list = ['ISLAND06', 'ISLAND10', 'ISLAND15']
-
-        axarr = []
-
-        fig = plt.figure(figsize=(18, 10))
-
-        gs = plt.GridSpec(5, 7, figure=fig, width_ratios=[1, 0.2, 1, 0.2, 1, 0.2, 0.5],
-                          height_ratios=[1, 0.2, 1, 0.2, 1])
-        for j in range(0, 5, 2):
-            for i in range(0, 5, 2):
-                axarr.append(plt.subplot(gs[j, i]))
-
-        legend_ax = plt.subplot(gs[:, 6])
-        self._remove_axes_but_allow_labels(legend_ax)
-        ax_count = 0
-        for spp in spp_list:
-            for island in island_list:
-
-                ax = axarr[ax_count]
-
-                df_of_spp_island = pcoa_df_dict['{}_{}'.format(spp, island)]
+                df_of_spp = pcoa_df_dict[spp]
 
                 # x values
-                x_values = df_of_spp_island['PC1'].values.tolist()[:-1]
+                x_values = df_of_spp['PC1'].values.tolist()[:-1]
 
                 # y values
-                y_values = df_of_spp_island['PC2'].values.tolist()[:-1]
+                y_values = df_of_spp['PC2'].values.tolist()[:-1]
 
-                samples_of_spp = df_of_spp_island.index.values.tolist()[:-1]
+                # z values
+                z_values = df_of_spp['PC3'].values.tolist()[:-1]
+
+                # pc4 values
+                pc4_values = df_of_spp['PC4'].values.tolist()[:-1]
+
+                samples_of_spp = df_of_spp.index.values.tolist()[:-1]
                 # get list of colours and list of markers
                 # colours can designate islands
-                colour_dict = {'SITE01': '#C0C0C0', 'SITE02': '#808080', 'SITE03': '#000000'}
-                colour_list = [colour_dict[self.coral_info_df_for_figures.loc[smp, 'site']] for smp in samples_of_spp]
+
+                colour_list = [self.colour_dict[self.parent.coral_info_df_for_figures.loc[smp, 'site']] for smp in samples_of_spp]
 
                 # shapes can designate sites
 
-                marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
-                marker_list = [marker_dict[self.coral_info_df_for_figures.loc[smp, 'island']] for smp in samples_of_spp]
+
+                marker_list = [self.marker_dict[self.parent.coral_info_df_for_figures.loc[smp, 'island']] for smp in samples_of_spp]
 
                 # plot the points
                 for x_val, y_val, col, mark in zip(x_values, y_values, colour_list, marker_list):
                     ax.scatter(x_val, y_val, c=col, marker=mark)
 
                 # add axes labels
-                ax.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp_island['PC1'][-1]))
-                ax.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp_island['PC2'][-1]))
+                ax.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp['PC1'][-1]))
+                ax.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp['PC2'][-1]))
                 # set axis title
-                if ax_count in [0, 1, 2]:
-                    ax.set_title('{}'.format(island), fontsize='large', fontweight='bold')
-                if ax_count in [2, 5, 8]:
-                    ax2 = ax.twinx()
-                    ax2.yaxis.set_ticklabels([])
-                    ax2.yaxis.set_ticks_position('none')
-                    ax2.set_ylabel(spp, fontsize='large', fontweight='bold')
+                ax.set_title('{}'.format(spp))
+                if is_three_d:
+                    # then lets plot the 3d equivalent below the 3d figs
+                    # plot the points
+                    for x_val, y_val, z_val, col, mark in zip(x_values, y_values, z_values, colour_list, marker_list):
+                        ax_second.scatter(x_val, y_val, z_val, c=col, marker=mark)
 
-                ax_count += 1
+                    # add axes labels
+                    ax_second.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp['PC1'][-1]))
+                    ax_second.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp['PC2'][-1]))
+                    ax_second.set_zlabel('PC3; explained = {}'.format('%.3f' % df_of_spp['PC3'][-1]))
 
-        # here we should put together the legend axis
-        self._vert_leg_axis(colour_dict, legend_ax, marker_dict)
 
-        fig.show()
-        plt.savefig(os.path.join(self.figure_output_dir, 'spp_island_pcoa.png'), dpi=1200)
-        plt.savefig(os.path.join(self.figure_output_dir, 'spp_island_pcoa.svg'))
-
-    def _generate_bray_curtis_distance_and_pcoa_spp_and_island(self):
-        """Read in the minor div dataframe which should have normalised abundances in them
-        # For each sample we have a fasta that we can read in which has the normalised (to 1000) sequences
-        # For feeding into med. We can use a default dict to collect the sequences and abundances from this fairly
-        # simply.
-        # This is likely best done on for each sample outside of the pairwise comparison to save on redoing the same
-        # collection of the sequences.
-        """
-
-        if os.path.isfile(os.path.join(self.cache_dir, 'minor_div_abundance_dict.p')):
-            minor_div_abundance_dict = pickle.load(
-                open(os.path.join(self.cache_dir, 'minor_div_abundance_dict.p'), 'rb'))
-
-        else:
-            minor_div_abundance_dict = self._generate_minor_div_abundance_dict_from_scratch()
-
-        # For each of the spp.
-        spp_island_pcoa_df_dict = {}
-        for spp in ['PORITES', 'POCILLOPORA', 'MILLEPORA']:
-            for island in ['ISLAND06', 'ISLAND10', 'ISLAND15']:
-                if os.path.isfile(os.path.join(self.cache_dir, f'spp_island_pcoa_df_{spp}_{island}.p')):
-                    spp_island_pcoa_df = pickle.load(
-                        open(os.path.join(self.cache_dir, f'spp_island_pcoa_df_{spp}_{island}.p'), 'rb'))
                 else:
-                    # Get a list of the samples that we should be working with
-                    sample_names_of_spp = self.coral_info_df_for_figures.loc[
-                        (self.coral_info_df_for_figures['genus'] == spp.upper()) &
-                        (self.coral_info_df_for_figures['island'] == island.upper())].index.values.tolist()
+                    # else lets just plot out the 3rd and 4th PCs below
+                    # plot the points
+                    for z_val, pc4_val, col, mark in zip(z_values, pc4_values, colour_list, marker_list):
+                        ax_second.scatter(z_val, pc4_val, c=col, marker=mark)
 
-                    # Remove the two porites species from this that seem to be total outliers
-                    if spp == 'PORITES':
-                        if 'CO0001674' in sample_names_of_spp:
-                            sample_names_of_spp.remove('CO0001674')
-                            sample_names_of_spp.remove('CO0001669')
+                    # add axes labels
+                    ax_second.set_xlabel('PC3; explained = {}'.format('%.3f' % df_of_spp['PC3'][-1]))
+                    ax_second.set_ylabel('PC4; explained = {}'.format('%.3f' % df_of_spp['PC4'][-1]))
 
-                    spp_island_distance_dict = self._get_spp_island_distance_dict(minor_div_abundance_dict,
-                                                                                  sample_names_of_spp)
+            # here we should put together the legend axis
+            self._vert_leg_axis(self.colour_dict, legend_ax, self.marker_dict)
 
-                    distance_out_file = self._make_and_output_distance_file_spp_island(sample_names_of_spp,
-                                                                                       spp_island_distance_dict)
+            fig.show()
+            if not is_three_d:
+                plt.savefig(os.path.join(self.parent.figure_output_dir, 'spp_pcoa_with_pc3_pc4.png'), dpi=1200)
+                plt.savefig(os.path.join(self.parent.figure_output_dir, 'spp_pcoa_with_pc3_pc4.svg'))
 
-                    # Feed this into the generate_PCoA_coords method
-                    spp_island_pcoa_df = self._generate_PCoA_coords(distance_out_file, spp)
-                    pickle.dump(spp_island_pcoa_df,
-                                open(os.path.join(self.cache_dir, f'spp_island_pcoa_df_{spp}_{island}.pickle'), 'wb'))
-                spp_island_pcoa_df_dict['{}_{}'.format(spp, island)] = spp_island_pcoa_df
-        return spp_island_pcoa_df_dict
+    # TODO put into class
+    class PlotPCoASppIsland(Generic_PCOA_DIST_Methods, GenericPlottingMethods):
 
-    def _make_and_output_distance_file_spp_island(self, sample_names_of_spp, spp_island_distance_dict):
-        # Generate the distance out file from this dictionary
-        # from this dict we can produce the distance file that can be passed into the generate_PCoA_coords method
-        distance_out_file = [len(sample_names_of_spp)]
-        for sample_outer in sample_names_of_spp:
-            # The list that will hold the line of distance. This line starts with the name of the sample
-            temp_sample_dist_string = [sample_outer]
+        def __init__(self, parent):
+            EighteenSAnalysis.GenericPlottingMethods.__init__(self)
+            EighteenSAnalysis.Generic_PCOA_DIST_Methods.__init__(self, parent=parent)
+            self.coral_info_df_for_figures = self.parent.coral_info_df_for_figures
+            self.cache_dir = self.parent.cache_dir
+            self.figure_output_dir = self.parent.figure_output_dir
 
-            for sample_inner in sample_names_of_spp:
-                if sample_outer == sample_inner:
-                    temp_sample_dist_string.append(0)
-                else:
-                    temp_sample_dist_string.append(spp_island_distance_dict[
-                                                       '{}_{}'.format(sample_outer, sample_inner)])
-            distance_out_file.append(
-                '\t'.join([str(distance_item) for distance_item in temp_sample_dist_string]))
-        # from here we can hopefully rely on the rest of the methods as they already are. The .dist file should be
-        # written out
-        dist_out_path = os.path.join \
-            (self.dist_output_dir, f'bray_curtis_within_spp_island_sample_distances_{spp}_{island}.dist')
-        with open(dist_out_path, 'w') as f:
-            for line in distance_out_file:
-                f.write('{}\n'.format(line))
-        return distance_out_file
+        def plot_pcoa_spp_island(self):
+            """
+            This is the code for producing a pcoa per island per species.
+            """
 
-    def _get_spp_island_distance_dict(self, minor_div_abundance_dict, sample_names_of_spp):
-        if os.path.isfile(os.path.join(self.cache_dir, f'spp_island_distance_dict_{spp}_{island}.p')):
-            spp_island_distance_dict = pickle.load(
-                open(os.path.join(self.cache_dir, f'spp_island_distance_dict_{spp}_{island}.p'), 'rb'))
+            # For each species get the pcoa df
+            pcoa_df_dict = self._generate_bray_curtis_distance_and_pcoa_spp_and_island()
 
-        else:
-            spp_island_distance_dict = self._generate_spp_island_distance_dict_from_scratch(
-                minor_div_abundance_dict, sample_names_of_spp)
-        return spp_island_distance_dict
+            # setup figure
+            spp_list = ['PORITES', 'POCILLOPORA', 'MILLEPORA']
 
-    def _generate_spp_island_distance_dict_from_scratch(self, minor_div_abundance_dict, sample_names_of_spp):
-        # Create a dictionary that will hold the distance between the two samples
-        spp_island_distance_dict = {}
-        # For pairwise comparison of each of these sequences
-        for smp_one, smp_two in itertools.combinations(sample_names_of_spp, 2):
-            print('Calculating distance for {}_{}'.format(smp_one, smp_two))
-            # Get a set of the sequences found in either one of the samples
-            smp_one_abund_dict = minor_div_abundance_dict[smp_one]
-            smp_two_abund_dict = minor_div_abundance_dict[smp_two]
-            list_of_seqs_of_pair = []
-            list_of_seqs_of_pair.extend(list(smp_one_abund_dict.keys()))
-            list_of_seqs_of_pair.extend(list(smp_two_abund_dict.keys()))
-            list_of_seqs_of_pair = list(set(list_of_seqs_of_pair))
+            island_list = ['ISLAND06', 'ISLAND10', 'ISLAND15']
 
-            # then create a list of abundances for sample one by going through the above list and checking
-            sample_one_abundance_list = []
-            for seq_name in list_of_seqs_of_pair:
-                if seq_name in smp_one_abund_dict.keys():
-                    sample_one_abundance_list.append(smp_one_abund_dict[seq_name])
-                else:
-                    sample_one_abundance_list.append(0)
+            axarr = []
 
-            # then create a list of abundances for sample two by going through the above list and checking
-            sample_two_abundance_list = []
-            for seq_name in list_of_seqs_of_pair:
-                if seq_name in smp_two_abund_dict.keys():
-                    sample_two_abundance_list.append(smp_two_abund_dict[seq_name])
-                else:
-                    sample_two_abundance_list.append(0)
+            fig = plt.figure(figsize=(18, 10))
 
-            # Do the Bray Curtis.
-            distance = braycurtis(sample_one_abundance_list, sample_two_abundance_list)
+            gs = plt.GridSpec(5, 7, figure=fig, width_ratios=[1, 0.2, 1, 0.2, 1, 0.2, 0.5],
+                              height_ratios=[1, 0.2, 1, 0.2, 1])
+            for j in range(0, 5, 2):
+                for i in range(0, 5, 2):
+                    axarr.append(plt.subplot(gs[j, i]))
 
-            # Add the distance to the dictionary using both combinations of the sample names
-            spp_island_distance_dict['{}_{}'.format(smp_one, smp_two)] = distance
-            spp_island_distance_dict['{}_{}'.format(smp_two, smp_one)] = distance
-        # doing this takes a bit of time so let's pickle it out
-        pickle.dump(
-            spp_island_distance_dict,
-            open(os.path.join(self.cache_dir, f'spp_island_distance_dict_{spp}_{island}.p'), 'wb'))
-        return spp_island_distance_dict
+            legend_ax = plt.subplot(gs[:, 6])
+            self._remove_axes_but_allow_labels(legend_ax)
+            ax_count = 0
+            for spp in spp_list:
+                for island in island_list:
 
-    def _vert_leg_axis(self, colour_dict, legend_ax, marker_dict):
-        legend_ax.set_ylim(0, 1)
-        legend_ax.set_xlim(0, 1)
-        legend_ax.invert_yaxis()
-        number_of_icons = 6
-        island_list = ['ISLAND06', 'ISLAND10', 'ISLAND15']
-        site_list = ['SITE01', 'SITE02', 'SITE03']
-        icon_list = []
-        # first populate the island icons
-        for site in site_list:
-            icon_list.append((colour_dict[site], marker_dict['ISLAND06']))
-        # then populate the site icons
-        for island in island_list:
-            icon_list.append((colour_dict['SITE01'], marker_dict[island]))
-        # lets assume that the axis is divided into 20 spaces for icons
-        max_number_icons = 20
-        # the  icon position should be mid way so max_number_icons
-        # first icon position
-        first_icon_position = int((max_number_icons - number_of_icons) / 2)
-        pos_counter = first_icon_position
-        for i in range(len(icon_list)):
-            y_val_for_icon_and_text = (1 / max_number_icons) * pos_counter
-            x_val_for_icon = 0.1
-            x_val_for_text = x_val_for_icon + 0.2
-            legend_ax.scatter(x=x_val_for_icon, y=y_val_for_icon_and_text, c=icon_list[i][0], marker=icon_list[i][1],
-                              s=100)
+                    ax = axarr[ax_count]
 
-            if int(i / 3) == 0:
-                legend_ax.text(s=site_list[i], x=x_val_for_text, y=y_val_for_icon_and_text)
-            elif int(i / 3) == 1:
-                legend_ax.text(s=island_list[i % 3], x=x_val_for_text, y=y_val_for_icon_and_text)
-            pos_counter += 1
+                    df_of_spp_island = pcoa_df_dict['{}_{}'.format(spp, island)]
 
+                    # x values
+                    x_values = df_of_spp_island['PC1'].values.tolist()[:-1]
 
+                    # y values
+                    y_values = df_of_spp_island['PC2'].values.tolist()[:-1]
 
+                    samples_of_spp = df_of_spp_island.index.values.tolist()[:-1]
+                    # get list of colours and list of markers
+                    # colours can designate islands
+                    colour_dict = {'SITE01': '#C0C0C0', 'SITE02': '#808080', 'SITE03': '#000000'}
+                    colour_list = [colour_dict[self.coral_info_df_for_figures.loc[smp, 'site']] for smp in samples_of_spp]
 
+                    # shapes can designate sites
 
+                    marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
+                    marker_list = [marker_dict[self.coral_info_df_for_figures.loc[smp, 'island']] for smp in samples_of_spp]
 
+                    # plot the points
+                    for x_val, y_val, col, mark in zip(x_values, y_values, colour_list, marker_list):
+                        ax.scatter(x_val, y_val, c=col, marker=mark)
 
+                    # add axes labels
+                    ax.set_xlabel('PC1; explained = {}'.format('%.3f' % df_of_spp_island['PC1'][-1]))
+                    ax.set_ylabel('PC2; explained = {}'.format('%.3f' % df_of_spp_island['PC2'][-1]))
+                    # set axis title
+                    if ax_count in [0, 1, 2]:
+                        ax.set_title('{}'.format(island), fontsize='large', fontweight='bold')
+                    if ax_count in [2, 5, 8]:
+                        ax2 = ax.twinx()
+                        ax2.yaxis.set_ticklabels([])
+                        ax2.yaxis.set_ticks_position('none')
+                        ax2.set_ylabel(spp, fontsize='large', fontweight='bold')
+
+                    ax_count += 1
+
+            # here we should put together the legend axis
+            self._vert_leg_axis(colour_dict, legend_ax, marker_dict)
+
+            fig.show()
+            plt.savefig(os.path.join(self.figure_output_dir, 'spp_island_pcoa.png'), dpi=1200)
+            plt.savefig(os.path.join(self.figure_output_dir, 'spp_island_pcoa.svg'))
+
+        def _generate_bray_curtis_distance_and_pcoa_spp_and_island(self):
+            """Read in the minor div dataframe which should have normalised abundances in them
+            # For each sample we have a fasta that we can read in which has the normalised (to 1000) sequences
+            # For feeding into med. We can use a default dict to collect the sequences and abundances from this fairly
+            # simply.
+            # This is likely best done on for each sample outside of the pairwise comparison to save on redoing the same
+            # collection of the sequences.
+            """
+
+            if os.path.isfile(os.path.join(self.cache_dir, 'minor_div_abundance_dict.p')):
+                minor_div_abundance_dict = pickle.load(
+                    open(os.path.join(self.cache_dir, 'minor_div_abundance_dict.p'), 'rb'))
+
+            else:
+                minor_div_abundance_dict = self._generate_minor_div_abundance_dict_from_scratch()
+
+            # For each of the spp.
+            spp_island_pcoa_df_dict = {}
+            for spp in ['PORITES', 'POCILLOPORA', 'MILLEPORA']:
+                for island in ['ISLAND06', 'ISLAND10', 'ISLAND15']:
+                    if os.path.isfile(os.path.join(self.cache_dir, f'spp_island_pcoa_df_{spp}_{island}.p')):
+                        spp_island_pcoa_df = pickle.load(
+                            open(os.path.join(self.cache_dir, f'spp_island_pcoa_df_{spp}_{island}.p'), 'rb'))
+                    else:
+                        # Get a list of the samples that we should be working with
+                        sample_names_of_spp = self.coral_info_df_for_figures.loc[
+                            (self.coral_info_df_for_figures['genus'] == spp.upper()) &
+                            (self.coral_info_df_for_figures['island'] == island.upper())].index.values.tolist()
+
+                        # Remove the two porites species from this that seem to be total outliers
+                        if spp == 'PORITES':
+                            if 'CO0001674' in sample_names_of_spp:
+                                sample_names_of_spp.remove('CO0001674')
+                                sample_names_of_spp.remove('CO0001669')
+
+                        spp_island_distance_dict = self._get_spp_island_distance_dict(minor_div_abundance_dict,
+                                                                                      sample_names_of_spp)
+
+                        distance_out_file = self._make_and_output_distance_file_spp_island(sample_names_of_spp,
+                                                                                           spp_island_distance_dict)
+
+                        # Feed this into the generate_PCoA_coords method
+                        spp_island_pcoa_df = self._generate_PCoA_coords(distance_out_file, spp)
+                        pickle.dump(spp_island_pcoa_df,
+                                    open(os.path.join(self.cache_dir, f'spp_island_pcoa_df_{spp}_{island}.pickle'), 'wb'))
+                    spp_island_pcoa_df_dict['{}_{}'.format(spp, island)] = spp_island_pcoa_df
+            return spp_island_pcoa_df_dict
+
+        def _make_and_output_distance_file_spp_island(self, sample_names_of_spp, spp_island_distance_dict):
+            # Generate the distance out file from this dictionary
+            # from this dict we can produce the distance file that can be passed into the generate_PCoA_coords method
+            distance_out_file = [len(sample_names_of_spp)]
+            for sample_outer in sample_names_of_spp:
+                # The list that will hold the line of distance. This line starts with the name of the sample
+                temp_sample_dist_string = [sample_outer]
+
+                for sample_inner in sample_names_of_spp:
+                    if sample_outer == sample_inner:
+                        temp_sample_dist_string.append(0)
+                    else:
+                        temp_sample_dist_string.append(spp_island_distance_dict[
+                                                           '{}_{}'.format(sample_outer, sample_inner)])
+                distance_out_file.append(
+                    '\t'.join([str(distance_item) for distance_item in temp_sample_dist_string]))
+            # from here we can hopefully rely on the rest of the methods as they already are. The .dist file should be
+            # written out
+            dist_out_path = os.path.join \
+                (self.parent.dist_output_dir, f'bray_curtis_within_spp_island_sample_distances_{spp}_{island}.dist')
+            with open(dist_out_path, 'w') as f:
+                for line in distance_out_file:
+                    f.write('{}\n'.format(line))
+            return distance_out_file
+
+        def _get_spp_island_distance_dict(self, minor_div_abundance_dict, sample_names_of_spp):
+            if os.path.isfile(os.path.join(self.cache_dir, f'spp_island_distance_dict_{spp}_{island}.p')):
+                spp_island_distance_dict = pickle.load(
+                    open(os.path.join(self.cache_dir, f'spp_island_distance_dict_{spp}_{island}.p'), 'rb'))
+
+            else:
+                spp_island_distance_dict = self._generate_spp_island_distance_dict_from_scratch(
+                    minor_div_abundance_dict, sample_names_of_spp)
+            return spp_island_distance_dict
+
+        def _generate_spp_island_distance_dict_from_scratch(self, minor_div_abundance_dict, sample_names_of_spp):
+            # Create a dictionary that will hold the distance between the two samples
+            spp_island_distance_dict = {}
+            # For pairwise comparison of each of these sequences
+            for smp_one, smp_two in itertools.combinations(sample_names_of_spp, 2):
+                print('Calculating distance for {}_{}'.format(smp_one, smp_two))
+                # Get a set of the sequences found in either one of the samples
+                smp_one_abund_dict = minor_div_abundance_dict[smp_one]
+                smp_two_abund_dict = minor_div_abundance_dict[smp_two]
+                list_of_seqs_of_pair = []
+                list_of_seqs_of_pair.extend(list(smp_one_abund_dict.keys()))
+                list_of_seqs_of_pair.extend(list(smp_two_abund_dict.keys()))
+                list_of_seqs_of_pair = list(set(list_of_seqs_of_pair))
+
+                # then create a list of abundances for sample one by going through the above list and checking
+                sample_one_abundance_list = []
+                for seq_name in list_of_seqs_of_pair:
+                    if seq_name in smp_one_abund_dict.keys():
+                        sample_one_abundance_list.append(smp_one_abund_dict[seq_name])
+                    else:
+                        sample_one_abundance_list.append(0)
+
+                # then create a list of abundances for sample two by going through the above list and checking
+                sample_two_abundance_list = []
+                for seq_name in list_of_seqs_of_pair:
+                    if seq_name in smp_two_abund_dict.keys():
+                        sample_two_abundance_list.append(smp_two_abund_dict[seq_name])
+                    else:
+                        sample_two_abundance_list.append(0)
+
+                # Do the Bray Curtis.
+                distance = braycurtis(sample_one_abundance_list, sample_two_abundance_list)
+
+                # Add the distance to the dictionary using both combinations of the sample names
+                spp_island_distance_dict['{}_{}'.format(smp_one, smp_two)] = distance
+                spp_island_distance_dict['{}_{}'.format(smp_two, smp_one)] = distance
+            # doing this takes a bit of time so let's pickle it out
+            pickle.dump(
+                spp_island_distance_dict,
+                open(os.path.join(self.cache_dir, f'spp_island_distance_dict_{spp}_{island}.p'), 'wb'))
+            return spp_island_distance_dict
 
 
 
@@ -1726,7 +1279,7 @@ class EighteenSAnalysis:
 
         seq_stacked_bar_plotter.plot()
 
-    class SeqStackedBarPlotter():
+    class SeqStackedBarPlotter(GenericPlottingMethods):
         """This method produced stacked bar charts. It can produce different charts depending on the plot_type.
         'full' means all of the sequences including the maj
         'low' means without the maj
@@ -1735,6 +1288,7 @@ class EighteenSAnalysis:
         'qc_absolute means' plot the absolute abundance of the post-qc sequences (all tax categories)"""
 
         def __init__(self, parent, plot_type):
+            EighteenSAnalysis.GenericPlottingMethods.__init__(self)
             self.plot_type = plot_type
             self.parent = parent
             self.ax_list, self.fig = self._setup_axes()
