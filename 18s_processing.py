@@ -2319,111 +2319,7 @@ def blast_worker(input_q, node_dict, name_dict):
         pickle.dump(coral_dict, open('{}/coral_dict.pickle'.format(sample_dir), 'wb'))
         pickle.dump(symbiodiniaceae_dict, open('{}/symbiodiniaceae_dict.pickle'.format(sample_dir), 'wb'))
 
-
-# this function will be responsible for creating the processed name and fasta paris from the fastq files
-# that can be found in the info df
-def sequence_QC(numProc=20):
-    # for the time being I will run the samples through essentially the same processing as the basic
-    # SymPortal processing.
-    # this processing should be MPed
-    info_df = generate_info_df_for_samples()
-
-    # lets make an iput queue that is going to be each of the samples
-    mothur_qc_input_queue = Queue()
-
-    # for each sample in the info_df I will add a tuple that is a pair of the fwd and rev directories to the fastq.gz
-    for ind in info_df.index.values.tolist():
-        mothur_qc_input_queue.put((info_df.loc[ind, 'fastq_fwd_file_path'], info_df.loc[ind, 'fastq_rev_file_path']))
-
-    for n in range(numProc):
-        mothur_qc_input_queue.put('STOP')
-
-    all_procs = []
-    for n in range(numProc):
-        p = Process(target=mothur_worker, args=(mothur_qc_input_queue,))
-        all_procs.append(p)
-        p.start()
-
-    for p in all_procs:
-        p.join()
-
-    return
-
-def mothur_worker(input_q):
-
-    for path_tup in iter(input_q.get, 'STOP'):
-
-        sample_dir = '/'.join(path_tup[0].split('/')[:-1])
-
-        # the 18S V9 region primers
-        primerFwdSeq = 'TTGTACACACCGCCC'  # Written 5'-->3'
-        primerRevSeq = 'CCTTCYGCAGGTTCACCTAC'  # Written 5'-->3'
-
-        oligoFile = [
-            r'#1389F',
-            'forward\t{0}'.format(primerFwdSeq),
-            r'#1510R',
-            'reverse\t{0}'.format(primerRevSeq)
-        ]
-
-        oligo_file_path = '{}/primers.oligos'.format(sample_dir)
-
-
-
-        stability_file = ['{}\t{}'.format(path_tup[0], path_tup[1])]
-        stability_file_path = '{}/stability.files'.format(sample_dir)
-        root_name = 'stability'
-
-        # write out stability file
-        with open(stability_file_path, 'w') as f:
-            for line in stability_file:
-                f.write('{}\n'.format(line))
-
-        # write out oligo file
-        with open(oligo_file_path, 'w') as f:
-            for line in oligoFile:
-                f.write('{}\n'.format(line))
-
-        # here we have the stability file written out and the oligo file
-
-        # The mothur batch file that will be run by mothur.
-        # todo if you find yourself reusing this you should add in a final unique.seqs at the end
-        mBatchFile = [
-            r'set.dir(input={0})'.format(sample_dir),
-            r'set.dir(output={0})'.format(sample_dir),
-            r'make.contigs(file={}, processors=20)'.format(stability_file_path),
-            r'summary.seqs(fasta={}/{}.trim.contigs.fasta)'.format(sample_dir, root_name),
-            r'screen.seqs(fasta={0}/{1}.trim.contigs.fasta, maxambig=0, maxhomop=5)'.format(
-                sample_dir, root_name),
-            r'summary.seqs(fasta={0}/{1}.trim.contigs.good.fasta)'.format(sample_dir, root_name),
-            r'unique.seqs(fasta={0}/{1}.trim.contigs.good.fasta)'.format(sample_dir, root_name),
-            r'summary.seqs(fasta={0}/{1}.trim.contigs.good.unique.fasta, name={0}/{1}.trim.contigs.good.names)'.format(
-                sample_dir, root_name),
-            r'split.abund(cutoff=2, fasta={0}/{1}.trim.contigs.good.unique.fasta, name={0}/{1}.trim.contigs.good.names)'.format(
-                sample_dir, root_name),
-            r'summary.seqs(fasta={0}/{1}.trim.contigs.good.unique.abund.fasta, name={0}/{1}.trim.contigs.good.abund.names)'.format(
-                sample_dir, root_name),
-            r'summary.seqs(fasta={0}/{1}.trim.contigs.good.unique.rare.fasta, name={0}/{1}.trim.contigs.good.rare.names)'.format(
-                sample_dir, root_name),
-            r'pcr.seqs(fasta={0}/{1}.trim.contigs.good.unique.abund.fasta, name={0}/{1}.trim.contigs.good.abund.names, oligos={0}/primers.oligos, pdiffs=2, rdiffs=2)'.format(
-                sample_dir, root_name)
-        ]
-
-        mBatchFile_path = '{}/mBatchFile'.format(sample_dir)
-
-        # write out batch file
-        with open(mBatchFile_path, 'w') as f:
-            for line in mBatchFile:
-                f.write('{}\n'.format(line))
-
-        # run the mothur processing
-        # subprocess.run(['mothur', r'{0}'.format(mBatchFile_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        subprocess.run(['mothur', r'{0}'.format(mBatchFile_path)])
-
-        sys.stdout.write('mothur complete for {}'.format(sample_dir))
-
-    return
-
+# TODO we should be able to delete all of these
 # This is a function to parse over the directory stucture that was on the TARA/Genescope ftp and create
 # an information dataframe
 # This method used the next three methods as well generate_info_collection_dict, create_sample_dict and
@@ -2574,7 +2470,6 @@ def create_sample_dict(location, parsing_dir, sample_type, site, water_type, inf
     info_collection_dict[sample_name] = sample_dict
     return
 
-
 def merge_fastqs(files, parsing_dir):
     # If we get here then there have been multiple sequencing runs for the same sample
     # we will aim to simply merge the fastqs together insitu
@@ -2636,7 +2531,6 @@ def merge_fastqs(files, parsing_dir):
     un_files = os.listdir(parsing_dir)
     for un_file in un_files:
         subprocess.run(['gzip', '{}/{}'.format(parsing_dir, un_file)])
-
 
 def create_info_df_from_info_collection_dict(columns_for_df, info_collection_dict):
     series_list = []
@@ -3600,6 +3494,106 @@ class EighteenSAnalysis:
             pickle.dump(self.coral_info_df_for_figures,
                         open(os.path.join(self.cache_dir, 'coral_info_df_for_figures.p'), 'wb'))
 
+    def do_seq_qc(self, numProc=20):
+        """this function will be responsible for creating the processed name and fasta pairs from the fastq files
+        # that can be found in the info df
+        """
+
+        # lets make an iput queue that is going to be each of the samples
+        mothur_qc_input_queue = Queue()
+
+        # for each sample in the info_df I will add a tuple that is a pair of the fwd and rev directories to the fastq.gz
+        for ind in self.all_samples_info_df.index.values.tolist():
+            mothur_qc_input_queue.put(
+                (self.all_samples_info_df.loc[ind, 'fastq_fwd_file_path'], self.all_samples_info_df.loc[ind, 'fastq_rev_file_path']))
+
+        for n in range(numProc):
+            mothur_qc_input_queue.put('STOP')
+
+        all_procs = []
+        for n in range(numProc):
+            p = Process(target=self._mothur_worker, args=(mothur_qc_input_queue,))
+            all_procs.append(p)
+            p.start()
+
+        for p in all_procs:
+            p.join()
+
+        return
+
+    def _mothur_worker(self, input_q):
+
+        for path_tup in iter(input_q.get, 'STOP'):
+
+            sample_dir = '/'.join(path_tup[0].split('/')[:-1])
+
+            # the 18S V9 region primers
+            primerFwdSeq = 'TTGTACACACCGCCC'  # Written 5'-->3'
+            primerRevSeq = 'CCTTCYGCAGGTTCACCTAC'  # Written 5'-->3'
+
+            oligoFile = [
+                r'#1389F',
+                'forward\t{0}'.format(primerFwdSeq),
+                r'#1510R',
+                'reverse\t{0}'.format(primerRevSeq)
+            ]
+
+            oligo_file_path = '{}/primers.oligos'.format(sample_dir)
+
+            stability_file = ['{}\t{}'.format(path_tup[0], path_tup[1])]
+            stability_file_path = '{}/stability.files'.format(sample_dir)
+            root_name = 'stability'
+
+            # write out stability file
+            with open(stability_file_path, 'w') as f:
+                for line in stability_file:
+                    f.write('{}\n'.format(line))
+
+            # write out oligo file
+            with open(oligo_file_path, 'w') as f:
+                for line in oligoFile:
+                    f.write('{}\n'.format(line))
+
+            # here we have the stability file written out and the oligo file
+
+            # The mothur batch file that will be run by mothur.
+            # todo if you find yourself reusing this you should add in a final unique.seqs at the end
+            mBatchFile = [
+                r'set.dir(input={0})'.format(sample_dir),
+                r'set.dir(output={0})'.format(sample_dir),
+                r'make.contigs(file={}, processors=20)'.format(stability_file_path),
+                r'summary.seqs(fasta={}/{}.trim.contigs.fasta)'.format(sample_dir, root_name),
+                r'screen.seqs(fasta={0}/{1}.trim.contigs.fasta, maxambig=0, maxhomop=5)'.format(
+                    sample_dir, root_name),
+                r'summary.seqs(fasta={0}/{1}.trim.contigs.good.fasta)'.format(sample_dir, root_name),
+                r'unique.seqs(fasta={0}/{1}.trim.contigs.good.fasta)'.format(sample_dir, root_name),
+                r'summary.seqs(fasta={0}/{1}.trim.contigs.good.unique.fasta, name={0}/{1}.trim.contigs.good.names)'.format(
+                    sample_dir, root_name),
+                r'split.abund(cutoff=2, fasta={0}/{1}.trim.contigs.good.unique.fasta, name={0}/{1}.trim.contigs.good.names)'.format(
+                    sample_dir, root_name),
+                r'summary.seqs(fasta={0}/{1}.trim.contigs.good.unique.abund.fasta, name={0}/{1}.trim.contigs.good.abund.names)'.format(
+                    sample_dir, root_name),
+                r'summary.seqs(fasta={0}/{1}.trim.contigs.good.unique.rare.fasta, name={0}/{1}.trim.contigs.good.rare.names)'.format(
+                    sample_dir, root_name),
+                r'pcr.seqs(fasta={0}/{1}.trim.contigs.good.unique.abund.fasta, name={0}/{1}.trim.contigs.good.abund.names, oligos={0}/primers.oligos, pdiffs=2, rdiffs=2)'.format(
+                    sample_dir, root_name)
+            ]
+
+            mBatchFile_path = '{}/mBatchFile'.format(sample_dir)
+
+            # write out batch file
+            with open(mBatchFile_path, 'w') as f:
+                for line in mBatchFile:
+                    f.write('{}\n'.format(line))
+
+            # run the mothur processing
+            # subprocess.run(['mothur', r'{0}'.format(mBatchFile_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run(['mothur', r'{0}'.format(mBatchFile_path)])
+
+            sys.stdout.write('mothur complete for {}'.format(sample_dir))
+
+        return
+
     def _generate_coral_info_df_for_figures_from_all_sample_info_df(self):
         if os.path.isfile(os.path.join(self.cache_dir, 'coral_info_df_for_figures.p')):
             self.coral_info_df_for_figures = pickle.load(
@@ -3843,6 +3837,7 @@ class EighteenSAnalysis:
                 subprocess.run(['gzip', '{}/{}'.format(self.current_dir, un_file)])
 
 eighteen_s_analysis = EighteenSAnalysis()
+# eighteen_s_analysis.do_seq_qc()
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='full')
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='low')
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_taxa_rel_abund')
