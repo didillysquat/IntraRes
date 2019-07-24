@@ -2691,6 +2691,9 @@ class EighteenSAnalysis:
         self.cache_dir = os.path.join(self.root_dir, 'cache')
         # This is the directory from which we will read in input files
         self.input_dir = os.path.join(self.root_dir, 'input')
+        # This is the directory in which we will save the figure outputs
+        self.figure_output_dir = os.path.join(self.root_dir, 'figures')
+        os.makedirs(self.figure_output_dir, exist_ok=True)
         os.makedirs(self.input_dir, exist_ok=True)
         os.makedirs(self.cache_dir,exist_ok=True)
 
@@ -2705,6 +2708,12 @@ class EighteenSAnalysis:
         self.sample_order = pickle.load(open(os.path.join(self.input_dir, 'ordered_sample_names_from_its2_work.pickle'), 'rb'))
 
     def plot_seq_stacked_bar_plots(self, plot_type):
+        """This method produced stacked bar charts. It can produce different charts depending on the plot_type.
+                'full' means all of the sequences including the maj
+                'low' means without the maj
+                'med' means without the maj and having been through med
+                'qc_taxa_rel_abund' means plot the relative abundance of the post qc taxa categories
+                'qc_absolute means' plot the absolute abundance of the post-qc sequences (all tax categories)"""
         seq_stacked_bar_plotter = self.SeqStackedBarPlotter(plot_type=plot_type, parent=self)
 
         seq_stacked_bar_plotter.plot()
@@ -2722,6 +2731,8 @@ class EighteenSAnalysis:
             self.parent = parent
             self.ax_list, self.fig = self._setup_axes()
             self.sample_abundance_df = None
+            # This df is only used for MED plotting
+            self.minor_intra_med_abund_df = None
             self.colour_dict = None
 
         def _setup_axes(self):
@@ -2763,10 +2774,11 @@ class EighteenSAnalysis:
                 # bob = sample_abundance_df.loc['CO0001677'].idxmax()
                 self.colour_dict = self._generate_colour_dict(is_med=False, is_qc=False)
             elif self.plot_type == 'med':
-                self.sample_abundance_df = create_MED_node_sample_abundance_df_for_minor_intras()
+                self.sample_abundance_df = self._generate_seq_abundance_df()
+                self.minor_intra_med_abund_df = self._create_med_node_sample_abundance_df_for_minor_intras()
                 self.colour_dict = self._generate_colour_dict(is_med=True, is_qc=False)
             elif 'qc' in self.plot_type:
-                self.sample_abundance_df = generate_post_qc_taxa_df()
+                self.sample_abundance_df = self._generate_post_qc_taxa_df()
                 self.colour_dict = self._generate_colour_dict(is_med=True, is_qc=True)
 
             if self.plot_type == 'low':
@@ -2780,20 +2792,289 @@ class EighteenSAnalysis:
             add_labels(self.ax_list)
 
             if self.plot_type == 'full':
-                plt.savefig('{}/raw_seqs_abund_stacked.png'.format(os.getcwd()))
-                plt.savefig('{}/raw_seqs_abund_stacked.svg'.format(os.getcwd()))
+                plt.savefig(os.path.join(self.parent.figure_output_dir, 'raw_seqs_abund_stacked.png'))
+                plt.savefig(os.path.join(self.parent.figure_output_dir, 'raw_seqs_abund_stacked.svg'))
             elif self.plot_type == 'low':
-                plt.savefig('{}/raw_seqs_abund_minor_div_only_stacked.png'.format(os.getcwd()))
-                plt.savefig('{}/raw_seqs_abund_minor_div_only_stacked.svg'.format(os.getcwd()))
+                plt.savefig(os.path.join(self.parent.figure_output_dir, 'raw_seqs_abund_minor_div_only_stacked.png'))
+                plt.savefig(os.path.join(self.parent.figure_output_dir, 'raw_seqs_abund_minor_div_only_stacked.svg'))
             elif self.plot_type == 'med':
-                plt.savefig('{}/raw_seqs_abund_minor_div_only_stacked_with_med.png'.format(os.getcwd()))
-                plt.savefig('{}/raw_seqs_abund_minor_div_only_stacked_with_med.svg'.format(os.getcwd()))
+                plt.savefig(os.path.join(self.parent.figure_output_dir, 'raw_seqs_abund_minor_div_only_stacked_with_med.png'))
+                plt.savefig(os.path.join(self.parent.figure_output_dir, 'raw_seqs_abund_minor_div_only_stacked_with_med.svg'))
             elif self.plot_type == 'qc_taxa_rel_abund':
-                plt.savefig('{}/post_qc_taxa_rel_abund.png'.format(os.getcwd()))
-                plt.savefig('{}/post_qc_taxa_rel_abund.svg'.format(os.getcwd()))
+                plt.savefig(os.path.join(self.parent.figure_output_dir, 'post_qc_taxa_rel_abund.png'))
+                plt.savefig(os.path.join(self.parent.figure_output_dir, 'post_qc_taxa_rel_abund.svg'))
             elif self.plot_type == 'qc_absolute':
-                plt.savefig('{}/post_qc_absolute.png'.format(os.getcwd()))
-                plt.savefig('{}/post_qc_absolute.svg'.format(os.getcwd()))
+                plt.savefig(os.path.join(self.parent.figure_output_dir, 'post_qc_absolute.png'))
+                plt.savefig(os.path.join(self.parent.figure_output_dir, 'post_qc_absolute.svg'))
+
+
+        def _create_med_node_sample_abundance_df_for_minor_intras(self):
+            """
+            # This code will create MED node profiles for each of the samples, disregarding the most abundant sequence
+            # NB after creating the MED sequences it was not much different to the raw sequences. This is likely becauase
+            # all of the sequences were found at such low and even abundances. I think, moving forwards we should just stick with
+            # working with the raw sequencs rather than the MED nodes.
+
+            # We should go sample by sample using the abundance_df and write out a fasta for the MED
+            # this will be a subsample of 1000 sequences of the minor DIVs, which will be run with a dynamic
+            # m value on MED.
+            # we will then read in the MED and create a dict for each sample that is MED node sequence to relabund
+            # we will then come out of MP and go serial to collect all of the MED nodes and get a cumulative abundance
+            # across all samples. We will order this and use the MED nodes as columns for the new minor_intras_abund_df
+            # we will then go back through all of the samples in serial and populate the MED df
+            # at this point we can pickle this df out and we can put it directly into plotting code of below
+            # to create the same minor intra figure that we had before but with having done the MED.
+            """
+
+            if os.path.isfile(os.path.join(self.parent.cache_dir, 'minor_intra_med_abund_df.p')):
+                minor_intra_med_abund_df = pickle.load(
+                    open(os.path.join(self.parent.cache_dir, 'minor_intra_med_abund_df.p'), 'rb'))
+            else:
+                # MP sample by sample to do the MED
+                input_q = Queue()
+
+                # put in a tup of series. The first series being the info, the second being the current raw seq abundance df series
+                for ind in self.parent.coral_info_df_for_figures.index.values.tolist():
+                    input_q.put((self.parent.coral_info_df_for_figures.loc[ind], self.sample_abundance_df.loc[ind]))
+
+                numProc = 20
+                for n in range(numProc):
+                    input_q.put('STOP')
+
+                all_procs = []
+                for n in range(numProc):
+                    p = Process(target=self._med_worker, args=(input_q,))
+                    all_procs.append(p)
+                    p.start()
+
+                for p in all_procs:
+                    p.join()
+
+                # here we have pickled out dictionaries of the MED nodes and their abundnaaces in each of the sample direcotires
+                # these abundances are relative abundances
+                # now have a master default dict and collect the abundances of the med nodes
+                master_abund_med_dict = defaultdict(float)
+                for ind in self.parent.coral_info_df_for_figures.index.values.tolist():
+                    print('adding med nodes to master dict for {}'.format(ind))
+                    sample_dir = self.parent.coral_info_df_for_figures.loc[ind, 'sample_dir']
+
+                    # read in the pickled abundance dict
+                    sample_med_abundance_dict = pickle.load(
+                        open('{}/sample_node_dict_rel_abund.pickle'.format(sample_dir), 'rb'))
+                    for seq_key, seq_rel_abund in sample_med_abundance_dict.items():
+                        master_abund_med_dict[seq_key] += seq_rel_abund
+
+                # here we have the master dict updated with all of the med node sequences
+                # sort and get list of med_node_seqs
+                sorted_med_node_seqs_tups = sorted(master_abund_med_dict.items(), key=lambda x: x[1], reverse=True)
+                med_node_seqs_sorted = [a[0] for a in sorted_med_node_seqs_tups]
+
+                # now create a df that will hold all of the sample abundances
+                minor_intra_med_abund_df = pd.DataFrame(columns=med_node_seqs_sorted)
+
+                # now go back through the samples again and populate the df by making a temp series
+                for ind in self.parent.coral_info_df_for_figures.index.values.tolist():
+                    print('populating minor_intra_med_abund_df with {}'.format(ind))
+                    sample_dir = self.parent.coral_info_df_for_figures.loc[ind, 'sample_dir']
+                    sample_med_abundance_dict = pickle.load(
+                        open('{}/sample_node_dict_rel_abund.pickle'.format(sample_dir), 'rb'))
+                    sample_data_in_order = []
+                    for seq in med_node_seqs_sorted:
+                        if seq in sample_med_abundance_dict.keys():
+                            sample_data_in_order.append(sample_med_abundance_dict[seq])
+                        else:
+                            sample_data_in_order.append(float(0))
+
+                    minor_intra_med_abund_df = minor_intra_med_abund_df.append(
+                        pd.Series(name=ind, data=sample_data_in_order, index=med_node_seqs_sorted))
+
+                # here we have the minor_intra_med_abund_df populated and we can pickle it out
+                pickle.dump(minor_intra_med_abund_df,
+                            open(os.path.join(self.parent.cache_dir, 'minor_intra_med_abund_df.p'), 'wb'))
+            return minor_intra_med_abund_df
+
+        def _med_worker(self, input_q):
+            for info_series, abund_series in iter(input_q.get, 'STOP'):
+                # check to see if the MED has already been completed for the sample. If so then simply pass onto next sample
+                print('MED for {}'.format(abund_series.name))
+                sample_dir = info_series['sample_dir']
+                if os.path.isfile('{}/sample_node_dict_rel_abund.pickle'.format(sample_dir)):
+                    continue
+
+                sample_name = abund_series.name
+                # now create a fasta for writing out
+                sample_fasta_for_MED = []
+                # https://pandas.pydata.org/pandas-docs/stable/generated/pandas.Series.nonzero.html
+                non_zero_series = abund_series[abund_series.nonzero()[0]]
+
+                seq_list_in_order = []
+                relabund_list_in_order = []
+
+                # we will skip the first sequence which is the most abundant
+                for seq in non_zero_series.index.values.tolist()[1:]:
+                    rel_abund_div = abund_series.loc[seq]
+                    seq_list_in_order.append(seq)
+                    relabund_list_in_order.append(rel_abund_div)
+
+                # now re normalise the abundances
+                seq_counter = 0
+                tot = sum(relabund_list_in_order)
+                normalised_seq_abund_list = []
+                for i in range(len(seq_list_in_order)):
+                    normalised_seq_abund = relabund_list_in_order[i] / tot
+                    normalised_seq_abund_list.append(normalised_seq_abund)
+                    absolute_abund_div = normalised_seq_abund * 1000
+                    if int(absolute_abund_div) > 0:
+                        for j in range(int(absolute_abund_div)):
+                            sample_fasta_for_MED.append('>raw_seq_{}'.format(seq_counter))
+                            sample_fasta_for_MED.append(seq_list_in_order[i])
+                            seq_counter += 1
+                check_tot = sum(normalised_seq_abund_list)
+
+                # here we have a fasta populated that we will use for running the MED
+                # now write it out, pad it, MED it
+                path_to_fasta_for_med = '{}/fasta_for_med.fasta'.format(sample_dir)
+                with open(path_to_fasta_for_med, 'w') as f:
+                    for line in sample_fasta_for_MED:
+                        f.write('{}\n'.format(line))
+
+                subprocess.run([r'o-pad-with-gaps', r'{}'.format(path_to_fasta_for_med)])
+
+                # Now run MED
+                listOfFiles = []
+                for (dirpath, dirnames, filenames) in os.walk(sample_dir):
+                    listOfFiles.extend(filenames)
+                    break
+                for file in listOfFiles:
+                    if 'PADDED' in file:
+                        pathToFile = '{}/{}'.format(sample_dir, file)
+                        break
+                MEDOutDir = '{}/{}/'.format(sample_dir, 'MEDOUT')
+                os.makedirs(MEDOutDir, exist_ok=True)
+                sys.stdout.write('{}: running MED\n'.format(sample_name))
+                # Here we need to make sure that the M value is defined dynamically
+                # the M value is a cutoff that looks at the abundance of the most abundant unique sequence in a node
+                # if the abundance is lower than M then the node is discarded
+                # we have been working recently with an M that equivaltes to 0.4% of 0.004. This was
+                # calculated when working with a modelling project where I was subsampling to 1000 sequences. In this
+                # scenario the M was set to 4.
+                # We should also take care that M doesn't go below 4, so we should use a max choice for the M
+                M_value = max(4, int(0.004 * (len(sample_fasta_for_MED) / 2)))
+                subprocess.run(
+                    [r'decompose', '-M', str(M_value), '--skip-gexf-files', '--skip-gen-figures', '--skip-gen-html',
+                     '--skip-check-input', '-o', MEDOutDir, pathToFile])
+                sys.stdout.write('{}: MED complete\n'.format(sample_name))
+
+                # here the MED has been conducted and we can now read in the nodes and create a dict for the sample
+                # read in the node file
+                with open('{}/NODE-REPRESENTATIVES.fasta'.format(MEDOutDir), 'r') as f:
+                    node_file = [line.rstrip() for line in f]
+
+                # get
+                sample_node_dict = {}
+                for i in range(0, len(node_file), 2):
+                    sample_node_dict[node_file[i + 1]] = int(node_file[i].split(':')[1])
+
+                # now do the rel abunds again and then pickle out
+                tot = sum(sample_node_dict.values())
+                sample_node_dict_rel_abund = {k: v / tot for k, v in sample_node_dict.items()}
+
+                pickle.dump(sample_node_dict_rel_abund,
+                            open('{}/sample_node_dict_rel_abund.pickle'.format(sample_dir), 'wb'))
+
+            return
+
+        def _generate_post_qc_taxa_df(self):
+
+            if os.path.isfile(os.path.join(self.parent.cache_dir, 'tax_absolute_abund_df.p')):
+                tax_absolute_abund_df = pickle.load(open(os.path.join(self.parent.cache_dir, 'tax_absolute_abund_df.p'), 'rb'))
+            else:
+                info_df = generate_info_df_for_samples()
+
+                fig_info_df = generate_fig_indo_df(info_df)
+
+                input_q = Queue()
+
+                for ind in fig_info_df.index.values.tolist():
+                    input_q.put((ind, fig_info_df.loc[ind, 'sample_dir']))
+
+                numProc = 20
+                for n in range(numProc):
+                    input_q.put('STOP')
+
+                all_procs = []
+                for n in range(numProc):
+                    p = Process(target=self._qc_abundance_worker, args=(input_q,))
+                    all_procs.append(p)
+                    p.start()
+
+                for p in all_procs:
+                    p.join()
+
+                # at this point we have the sample_tax_category_dict items for each sample pickled out
+                # we can now go through each of the sample_dir again and use them to populate the master df
+                # which we will then return
+                tax_columns = ['Porites', 'Millepora', 'Pocillopora', 'other_coral', 'Symbiodiniaceae', 'other_taxa']
+                tax_absolute_abund_df = pd.DataFrame(columns=tax_columns)
+                for ind in fig_info_df.index.values.tolist():
+                    sample_dir = fig_info_df.loc[ind, 'sample_dir']
+
+                    # load the sample_tax_category_dict
+                    sample_tax_category_dict = pickle.load(
+                        open('{}/sample_tax_category_dict.pickle'.format(sample_dir), 'rb'))
+
+                    sample_data = []
+                    for cat in tax_columns:
+                        if cat in sample_tax_category_dict.keys():
+                            sample_data.append(sample_tax_category_dict[cat])
+                        else:
+                            sample_data.append(0)
+                    tax_absolute_abund_df = tax_absolute_abund_df.append(
+                        pd.Series(data=sample_data, index=tax_columns, name=ind))
+
+                # here we have the tax_absolute_abund_df populated
+                # now pickle it out
+                pickle.dump(tax_absolute_abund_df, open(os.path.join(self.parent.cache_dir, 'tax_absolute_abund_df.p'), 'wb'))
+            return tax_absolute_abund_df
+
+        def _qc_abundance_worker(self, input_q):
+            # the aim of this worker will be to pickle out a abund_tax_dict that will have the keys
+            # pocillopora, millepora, porites, other_host, symbiodiniacea, other_taxa
+            for sample_name, sample_dir in iter(input_q.get, 'STOP'):
+                if os.path.isfile('{}/sample_tax_category_dict.pickle'.format(sample_dir)):
+                    continue
+                sys.stdout.write('\nSample {}\n'.format(sample_name))
+                # read in names file
+                with open('{}/stability.trim.contigs.good.abund.pcr.names'.format(sample_dir), 'r') as f:
+                    name_file = [line.rstrip() for line in f]
+
+                # from this we can get the other taxa as any taxa that's value isn't 'Scleractinia' or 'Symbiodiniacea'
+                sample_tax_dict = pickle.load(open('{}/sample_tax_dict.pickle'.format(sample_dir), 'rb'))
+                # from this the value is the genus. So we can search for 'Porites', 'Millepora', 'Pocillopora'
+                coral_dict = pickle.load(open('{}/coral_dict.pickle'.format(sample_dir), 'rb'))
+                # each of the sequence names in this is symbiodiniaceae so we can simply count these
+                symbiodiniaceae_dict = pickle.load(open('{}/symbiodiniaceae_dict.pickle'.format(sample_dir), 'rb'))
+
+                sample_tax_category_dict = defaultdict(int)
+                # go through the name file line by line identifying what it belongs to
+                for line in name_file:
+                    abundance = len(line.split('\t')[1].split(','))
+                    seq_name = line.split('\t')[0]
+                    if seq_name in coral_dict.keys():
+                        genus_name = coral_dict[seq_name]
+                        if genus_name in ['Porites', 'Millepora', 'Pocillopora']:
+                            sample_tax_category_dict[genus_name] += abundance
+                        else:
+                            # then this another coral
+                            sample_tax_category_dict['other_coral'] += abundance
+                    elif seq_name in symbiodiniaceae_dict.keys():
+                        sample_tax_category_dict['Symbiodiniaceae'] += abundance
+                    elif seq_name in sample_tax_dict.keys():
+                        sample_tax_category_dict['other_taxa'] += abundance
+
+                # here we have the sample_tax_category_dict populated and we can now pickle it out
+                pickle.dump(sample_tax_category_dict,
+                            open('{}/sample_tax_category_dict.pickle'.format(sample_dir), 'wb'))
 
         def _plot_data_axes_18s(self, minor_DIV=False, qc=False):
 
@@ -3039,7 +3320,7 @@ class EighteenSAnalysis:
             most abundant sequenecs first.
             """
 
-            if os.path.isfile(os.path.join(self.parent.cache_dir, 'sample_abundance_Tdf.p')):
+            if os.path.isfile(os.path.join(self.parent.cache_dir, 'sample_abundance_df.p')):
                 sample_abundance_df = pd.read_pickle(os.path.join(self.parent.cache_dir, 'sample_abundance_df.p'))
             else:
                 input_q = Queue()
@@ -3086,7 +3367,7 @@ class EighteenSAnalysis:
                 # For every coral sample
                 for ind in self.parent.coral_info_df_for_figures.index.values.tolist():
 
-                    print('Populating df with {}'.format(ind))
+                    print(f'Populating df with {ind}')
                     sample_dir = self.parent.coral_info_df_for_figures.loc[ind, 'sample_dir']
                     if os.path.isfile(os.path.join(sample_dir, 'sample_abundance_series.pkl')):
                         sample_abundance_series = pd.read_pickle(os.path.join(sample_dir, 'sample_abundance_series.pkl'))
@@ -3169,8 +3450,11 @@ class EighteenSAnalysis:
         def _make_master_abund_dict(self):
             master_abund_dict = defaultdict(float)
             # For every coral sample
+            tot = len(self.parent.coral_info_df_for_figures.index.values.tolist())
+            count = 0
             for ind in self.parent.coral_info_df_for_figures.index.values.tolist():
-                print('Counting {}'.format(ind))
+                count += 1
+                print(f'Counting {ind}: {count} out of {tot} samples')
                 sample_dir = self.parent.coral_info_df_for_figures.loc[ind, 'sample_dir']
                 sample_abund_dict = pickle.load(open(os.path.join(sample_dir, 'seq_abund_dict.pickle'), 'rb'))
                 # For every sequence in the coral
@@ -3559,4 +3843,9 @@ class EighteenSAnalysis:
                 subprocess.run(['gzip', '{}/{}'.format(self.current_dir, un_file)])
 
 eighteen_s_analysis = EighteenSAnalysis()
-eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='full')
+# eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='full')
+# eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='low')
+# eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_taxa_rel_abund')
+# eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_absolute')
+# eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='med')
+
