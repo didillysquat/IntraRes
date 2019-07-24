@@ -1318,685 +1318,6 @@ def MED_worker(input_q):
     return
 
 
-
-# Code for generating the figure that will let us examine what our profile look like.
-# this first go at this will not take into account any generated type profiles but rather just plot the sequences
-# in each sample.
-def generate_fig(plot_type):
-    # this is the sample order from the its2 work
-    # sample_order = pickle.load(open('ordered_sample_names_from_its2_work.pickle', 'rb'))
-    # to do this we'll have to read this in from the its2 work.
-    # plot_type should be either 'full', 'low', or 'med'
-    # full means all of the sequences including the maj
-    # low means without the maj
-    # med means without the maj and having been through med
-    # qc_taxa_rel_abund means plot the relative abundance of the post qc taxa categories
-    # qc_absolute means plot the absolute abundance of the post-qc sequences (all tax categories)
-    info_df = generate_info_df_for_samples()
-
-    fig_info_df = generate_fig_indo_df(info_df)
-
-    # here we have the fig_info_df generated. We can use this for making the figure
-    # SETUP AXES
-    ax_list, fig = setup_axes()
-    # here we have the axes set up.
-    # before we move onto the actual plotting of the samples we should create an sp_output_df_div equivalent
-    # for the samples. This will mean going through each of the coral sample directories and collecting relative
-    # abundances. We will do this using the genus specific fastas.
-    if plot_type == 'full' or plot_type == 'low':
-        sample_abundance_df = generate_seq_abundance_df(fig_info_df)
-        # bob = sample_abundance_df.loc['CO0001677'].idxmax()
-        colour_dict = generate_colour_dict(sample_abundance_df=sample_abundance_df, is_med=False, is_qc=False)
-    elif plot_type == 'med':
-        sample_abundance_df = create_MED_node_sample_abundance_df_for_minor_intras()
-        colour_dict = generate_colour_dict(sample_abundance_df=sample_abundance_df, is_med=True, is_qc=False)
-    elif 'qc' in plot_type:
-        sample_abundance_df = generate_post_qc_taxa_df()
-        colour_dict = generate_colour_dict(sample_abundance_df=sample_abundance_df, is_med=True, is_qc=True)
-
-    if plot_type == 'low':
-        plot_data_axes_18s(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=True)
-    elif plot_type == 'full' or plot_type == 'med':
-        plot_data_axes_18s(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False)
-    elif 'qc' in plot_type:
-        plot_data_axes_18s(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False,
-                       qc=True, plot_type=plot_type)
-
-    add_labels(ax_list)
-
-    if plot_type == 'full':
-        plt.savefig('{}/raw_seqs_abund_stacked.png'.format(os.getcwd()))
-        plt.savefig('{}/raw_seqs_abund_stacked.svg'.format(os.getcwd()))
-    elif plot_type == 'low':
-        plt.savefig('{}/raw_seqs_abund_minor_div_only_stacked.png'.format(os.getcwd()))
-        plt.savefig('{}/raw_seqs_abund_minor_div_only_stacked.svg'.format(os.getcwd()))
-    elif plot_type == 'med':
-        plt.savefig('{}/raw_seqs_abund_minor_div_only_stacked_with_med.png'.format(os.getcwd()))
-        plt.savefig('{}/raw_seqs_abund_minor_div_only_stacked_with_med.svg'.format(os.getcwd()))
-    elif plot_type == 'qc_taxa_rel_abund':
-        plt.savefig('{}/post_qc_taxa_rel_abund.png'.format(os.getcwd()))
-        plt.savefig('{}/post_qc_taxa_rel_abund.svg'.format(os.getcwd()))
-    elif plot_type == 'qc_absolute':
-        plt.savefig('{}/post_qc_absolute.png'.format(os.getcwd()))
-        plt.savefig('{}/post_qc_absolute.svg'.format(os.getcwd()))
-
-
-
-    return
-
-# the first step for this is to generate an info df.
-# we can generate this from the current info_df
-# we should call it fig_info_df
-def generate_fig_indo_df(info_df):
-    if os.path.isfile('{}/fig_info_df.pickle'.format(os.getcwd())):
-        return pickle.load(open('{}/fig_info_df.pickle'.format(os.getcwd()), 'rb'))
-    else:
-        fig_info_df = pd.DataFrame(columns=['island', 'site', 'genus', 'individual', 'sample_dir'])
-        for ind in info_df.index.values.tolist():
-            if 'CORAL' in info_df.loc[ind, 'fastq_fwd_file_path']:
-                fastq_string = info_df.loc[ind, 'fastq_fwd_file_path']
-                components = fastq_string.split('/')
-                smp_site = components[-6]
-                smp_island = components[-7]
-                smp_individual = components[-3]
-                smp_genus = components[-4]
-                smp_dir = '/'.join(components[:-1])
-                fig_info_df = fig_info_df.append(
-                    pd.Series(name=ind, data=[smp_island, smp_site, smp_genus, smp_individual, smp_dir],
-                              index=['island', 'site', 'genus', 'individual', 'sample_dir']))
-        pickle.dump(fig_info_df, open('{}/fig_info_df.pickle'.format(os.getcwd()), 'wb'))
-        return fig_info_df
-
-def setup_axes():
-    # https://matplotlib.org/users/gridspec.html
-    fig = plt.figure(figsize=(14, 8))
-    # the bottom row will be for the legend
-    # the second to last will just be invisible to give a space between the legend and the other plots
-    # we also want to include a gridspec plot after each of the main three. These will hold the csw and surface
-    # samples
-    gs = plt.GridSpec(5, 3, figure=fig, height_ratios=[1, 0.3, 1, 0.3, 1])
-    # within each of the GrdiSpec subplots we will make a subplotspec which is three plots on one row
-    ax_list = []
-    grid_spec_subplot_list = []
-    increaser = 0
-    # make the main 3x3 axis
-    for row_ind in range(3):
-        for col_ind in range(3):
-            # put in the main data 3 plots
-            temp_grid_spec_subplot = gridspec.GridSpecFromSubplotSpec(1, 3,
-                                                                      subplot_spec=gs[row_ind + increaser, col_ind])
-            grid_spec_subplot_list.append(temp_grid_spec_subplot)
-            for i in range(3):
-                # NB this might be a 2d array, lets see.
-                ax = plt.Subplot(fig, temp_grid_spec_subplot[i])
-                ax_list.append(ax)
-                fig.add_subplot(ax)
-        # now put in the spacer row
-        if increaser < 2:
-            ax_space = plt.subplot(gs[row_ind + 1 + increaser, :])
-            remove_axes_but_allow_labels(ax_space)
-            increaser += 1
-    return ax_list, fig
-
-def plot_data_axes_18s(ax_list, colour_dict, fig_info_df, sample_abundance_df, sample_order, minor_DIV=False, qc=False, plot_type=None):
-
-    ax_count = 0
-    for site in ['SITE01', 'SITE02', 'SITE03']:
-        for location in ['ISLAND06', 'ISLAND10', 'ISLAND15']:
-            for spp in ['PORITES', 'POCILLOPORA', 'MILLEPORA']:
-                ax = ax_list[ax_count]
-                patches_list = []
-                ind = 0
-                colour_list = []
-
-                # for each set of location, site and spp, we basically want to get a list of the samples
-                # that meet the set criteria, we then want to plot samples according to the ordered_sample_list
-                # order which will be in IDs. As such we will have to convert the sample_name in the info_df
-                # to a sample ID using the smp_name_to_smp_id_dict.
-
-                # get sample_names that fit the requirements
-                sample_names_of_set = fig_info_df.loc[
-                    (fig_info_df['island'] == location) &
-                    (fig_info_df['site'] == site) &
-                    (fig_info_df['genus'] == spp)
-                    ].index.values.tolist()
-
-                # get the above sample_names_of_set in order of the sample_order list
-                ordered_sample_names_of_set = []
-                for samp_name in sample_order:
-                    if samp_name in sample_names_of_set:
-                        ordered_sample_names_of_set.append(samp_name)
-
-                # there may be some samples in the sample_names_of_set that aren't in the sample_order
-                # add these here
-                for sample_name in sample_names_of_set:
-                    if sample_name not in sample_order:
-                        ordered_sample_names_of_set.append(sample_name)
-
-
-                num_smp_in_this_subplot = len(sample_names_of_set)
-                x_tick_label_list = []
-
-                for smple_id_to_plot in ordered_sample_names_of_set:
-                    # General plotting
-                    sys.stdout.write('\rPlotting sample: {}'.format(smple_id_to_plot))
-                    x_tick_label_list.append(smple_id_to_plot)
-                    # for each sample we will start at 0 for the y and then add the height of each bar to this
-
-                    # PLOT DIVs
-                    if minor_DIV:
-                        plot_div_over_type_minor_div_only(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df)
-                    elif qc:
-                        plot_div_over_type_qc_abund(colour_dict=colour_dict, colour_list=colour_list, ind=ind,
-                                                    patches_list=patches_list, smple_id_to_plot=smple_id_to_plot,
-                                                    sample_abundance_df=sample_abundance_df, plot_type=plot_type)
-                    else:
-                        plot_div_over_type_18s(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df)
-
-
-                    ind += 1
-                if qc:
-                    paint_rect_to_axes_div_and_type_18s(ax=ax, colour_list=colour_list,
-                                                    num_smp_in_this_subplot=num_smp_in_this_subplot,
-                                                    patches_list=patches_list,
-                                                    x_tick_label_list=x_tick_label_list,
-                                                    max_num_smpls_in_subplot=10, qc=True, plot_type=plot_type,
-                                                    ax_count=ax_count)
-                else:
-                    paint_rect_to_axes_div_and_type_18s(ax=ax, colour_list=colour_list,
-                                                    num_smp_in_this_subplot=num_smp_in_this_subplot,
-                                                    patches_list=patches_list,
-                                                    x_tick_label_list=x_tick_label_list,
-                                                    max_num_smpls_in_subplot=10)
-
-                ax_count += 1
-
-def add_labels(ax_list):
-    ax_list[1].set_title('ISLAND06')
-    ax_list[4].set_title('ISLAND10')
-    ax_list[7].set_title('ISLAND15')
-
-    ax_list[0].set_ylabel('SITE 1', fontsize='x-large')
-    ax_list[9].set_ylabel('SITE 2', fontsize='x-large')
-    ax_list[18].set_ylabel('SITE 3', fontsize='x-large')
-
-    ax_list[18].set_xlabel('porites', fontsize='medium')
-    ax_list[19].set_xlabel('pocillopora', fontsize='medium')
-    ax_list[20].set_xlabel('millepora', fontsize='medium')
-
-    ax_list[21].set_xlabel('porites', fontsize='medium')
-    ax_list[22].set_xlabel('pocillopora', fontsize='medium')
-    ax_list[23].set_xlabel('millepora', fontsize='medium')
-
-    ax_list[24].set_xlabel('porites', fontsize='medium')
-    ax_list[25].set_xlabel('pocillopora', fontsize='medium')
-    ax_list[26].set_xlabel('millepora', fontsize='medium')
-
-def paint_rect_to_axes_div_and_type_18s(ax, colour_list, num_smp_in_this_subplot,  patches_list, x_tick_label_list=None,
-                                    max_num_smpls_in_subplot=10, qc=False, plot_type=None, ax_count=None):
-    # We can try making a custom colour map
-    # https://matplotlib.org/api/_as_gen/matplotlib.colors.ListedColormap.html
-    this_cmap = ListedColormap(colour_list)
-    # here we should have a list of Rectangle patches
-    # now create the PatchCollection object from the patches_list
-    patches_collection = PatchCollection(patches_list, cmap=this_cmap)
-    patches_collection.set_array(np.arange(len(patches_list)))
-    # if n_subplots is only 1 then we can refer directly to the axarr object
-    # else we will need ot reference the correct set of axes with i
-    # Add the pathces to the axes
-    ax.add_collection(patches_collection)
-    ax.autoscale_view()
-    ax.figure.canvas.draw()
-    # also format the axes.
-    # make it so that the x axes is constant length
-    ax.set_xlim(0 - 0.5, max_num_smpls_in_subplot - 0.5)
-    if plot_type != 'qc_absolute':
-        ax.set_ylim(0, 1)
-    ax.set_xticks(range(num_smp_in_this_subplot))
-    ax.set_xticklabels(x_tick_label_list, rotation='vertical', fontsize=6)
-
-    if plot_type == 'qc_absolute':
-        ax.set_ylim(0, 2000000)
-        ax.set_yscale('symlog')
-        if ax_count % 9 != 0:
-            remove_axes_but_allow_labels(ax, x_tick_label_list)
-        else:
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
-
-
-
-    else:
-        remove_axes_but_allow_labels(ax, x_tick_label_list)
-
-    # as well as getting rid of the top and right axis splines
-    # I'd also like to restrict the bottom spine to where there are samples plotted but also
-    # maintain the width of the samples
-    # I think the easiest way to do this is to hack a bit by setting the x axis spines to invisible
-    # and then drawing on a line at y = 0 between the smallest and largest ind (+- 0.5)
-    # ax.spines['bottom'].set_visible(False)
-    if plot_type != 'qc_absolute':
-        ax.add_line(Line2D((0 - 0.5, num_smp_in_this_subplot - 0.5), (0, 0), linewidth=2, color='black'))
-    elif plot_type == 'qc_absolute':
-        ax.add_line(Line2D((0 - 0.5, num_smp_in_this_subplot - 0.5), (0.1, 0.1), linewidth=2, color='black'))
-
-def plot_div_over_type_18s(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df):
-    bottom_div = 0
-    # for each sequence, create a rect patch
-    # the rect will be 1 in width and centered about the ind value.
-
-    sample_series = sample_abundance_df.loc[smple_id_to_plot]
-    # https://pandas.pydata.org/pandas-docs/stable/generated/pandas.Series.nonzero.html
-    non_zero_series = sample_series[sample_series.nonzero()[0]]
-    non_zero_series_index_list = non_zero_series.index.values.tolist()
-    print('\nplotting {} intra seqs'.format(len(non_zero_series_index_list)))
-    for seq in non_zero_series_index_list:
-        # class matplotlib.patches.Rectangle(xy, width, height, angle=0.0, **kwargs)
-        rel_abund_div = sample_abundance_df.loc[smple_id_to_plot, seq]
-        if rel_abund_div > 0:
-            patches_list.append(Rectangle((ind - 0.5, bottom_div), 1, rel_abund_div, color=colour_dict[seq]))
-            # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
-            colour_list.append(colour_dict[seq])
-            bottom_div += rel_abund_div
-
-def plot_div_over_type_minor_div_only(colour_dict, colour_list, ind, patches_list, smple_id_to_plot, sample_abundance_df):
-    # so it appears that there is a predominant sequence that occupies about 93% of each sample
-    # so the intragenomic diverstiy is very compressed in the top of the plots. To expand this a bit so that we can
-    # look at the intragenomic, I will leave out the predomiant sequence
-    bottom_div = 0
-    # for each sequence, create a rect patch
-    # the rect will be 1 in width and centered about the ind value.
-    # have a list that holds the seq and another that holds the abundance in order.
-    # that way we can re normalise the list
-    seq_list_in_order = []
-    relabund_list_in_order = []
-    # we will skip the first three sequences which were the most abundant
-    # this is relatively slow and I think we can use the nonzero function of a series to speed this up
-    sample_series = sample_abundance_df.loc[smple_id_to_plot]
-    # https://pandas.pydata.org/pandas-docs/stable/generated/pandas.Series.nonzero.html
-    non_zero_series = sample_series[sample_series.nonzero()[0]]
-
-    for seq in non_zero_series.index.values.tolist()[1:]:
-        rel_abund_div = sample_abundance_df.loc[smple_id_to_plot, seq]
-        if rel_abund_div > 0 and rel_abund_div < 0.5:
-            seq_list_in_order.append(seq)
-            relabund_list_in_order.append(rel_abund_div)
-    # now re normalise the abundances
-    tot = sum(relabund_list_in_order)
-    for i in range(len(seq_list_in_order)):
-        normalised_seq_abund = relabund_list_in_order[i]/tot
-        patches_list.append(Rectangle((ind - 0.5, bottom_div), 1, normalised_seq_abund, color=colour_dict[seq_list_in_order[i]]))
-        # axarr.add_patch(Rectangle((ind-0.5, bottom), 1, rel_abund, color=colour_dict[seq]))
-        colour_list.append(colour_dict[seq_list_in_order[i]])
-        bottom_div += normalised_seq_abund
-
-def plot_div_over_type_qc_abund(colour_dict, colour_list, ind, patches_list,
-                                smple_id_to_plot, sample_abundance_df, plot_type=None):
-
-    bottom_div = 0
-    # for each sequence, create a rect patch
-    # the rect will be 1 in width and centered about the ind value.
-
-    sample_series = sample_abundance_df.loc[smple_id_to_plot]
-    # https://pandas.pydata.org/pandas-docs/stable/generated/pandas.Series.nonzero.html
-    non_zero_series = sample_series[sample_series.nonzero()[0]]
-
-    if plot_type == 'qc_absolute':
-        for tax_category in non_zero_series.index.values.tolist():
-            # class matplotlib.patches.Rectangle(xy, width, height, angle=0.0, **kwargs)
-            abs_abund = sample_abundance_df.loc[smple_id_to_plot, tax_category]
-            patches_list.append(Rectangle((ind - 0.5, bottom_div), 1, abs_abund, color='#808080'))
-            colour_list.append('#808080')
-            bottom_div += abs_abund
-
-    elif plot_type == 'qc_taxa_rel_abund':
-        cat_abund_list = []
-        cat_name_list = []
-        for tax_category in non_zero_series.index.values.tolist():
-            cat_abs_abund = sample_abundance_df.loc[smple_id_to_plot, tax_category]
-            cat_abund_list.append(cat_abs_abund)
-            cat_name_list.append(tax_category)
-        tot = sum(cat_abund_list)
-        rel_abunds_list = [abund/tot for abund in cat_abund_list]
-        check = sum(rel_abunds_list)
-        for i, cat_name in enumerate(cat_name_list):
-            patches_list.append(Rectangle((ind - 0.5, bottom_div), 1, rel_abunds_list[i], color=colour_dict[cat_name]))
-            colour_list.append(colour_dict[cat_name])
-            bottom_div += rel_abunds_list[i]
-
-def generate_colour_dict(sample_abundance_df, is_med=False, is_qc=False):
-    # the purpose of this is to return a seuence to colour dictionary that we will pickle out to maintain
-    # continuity
-    # make the colour list and the grey list
-    # then get the sequence order from the sample_abundance_df
-    # then associate to the colours until we are out of colours
-    colour_dict = {}
-    if is_qc:
-        return {'Porites':'#FFFF00', 'Pocillopora':'#87CEFA', 'Millepora':'#FF6347',
-         'other_coral':'#C0C0C0', 'Symbiodiniaceae':'#00FF00', 'other_taxa':'#696969'}
-
-    if is_med:
-        colour_list = get_colour_list()[3:]
-    else:
-        colour_list = get_colour_list()
-    grey_palette = ['#D0CFD4', '#89888D', '#4A4A4C', '#8A8C82', '#D4D5D0', '#53544F']
-    for i, seq_name in enumerate(list(sample_abundance_df)):
-        if i < len(colour_list):
-            colour_dict[seq_name] = colour_list[i]
-        else:
-            colour_dict[seq_name] = grey_palette[i%6]
-    return colour_dict
-
-def generate_seq_abundance_df(fig_info_df, numProc=20):
-    # the purpose of this will be to get a dataframe that contains the sequence abundances for each of the samples
-    # this will only contain the sequence abundances for the specific genus coral sequences
-    # so it will not contain any zooxs seqs or non-scleractinian zooxs.
-    # One thing that will be tough is getting a global collection of the sequences that have been found.
-    # I think the best way to do this is to MP this and return a dictionary for each sample
-    # where the key will be the sample name
-    # and the vlaue will be a dictionary which will be key of actual sequences and relabund of the seq
-    # once we have all of these we can get a gloab diversity of sequence and we can also get a global abundance
-    # of the seuqences so that we can plot the most abundant sequenecs first.
-
-    # this df only holds info for the coral samples so there is no need to filter
-
-    if os.path.isfile('{}/sample_abundance_df.pkl'.format(os.getcwd())):
-        sample_abundance_df = pd.read_pickle('{}/sample_abundance_df.pkl'.format(os.getcwd()))
-    else:
-        input_q = Queue()
-
-        for ind in fig_info_df.index.values.tolist():
-            input_q.put((ind, fig_info_df.loc[ind, 'sample_dir']))
-
-        for n in range(numProc):
-            input_q.put('STOP')
-
-
-        all_procs = []
-        for n in range(numProc):
-            p = Process(target=abundance_worker, args=(input_q, ))
-            all_procs.append(p)
-            p.start()
-
-        for p in all_procs:
-            p.join()
-
-        # at this stage we have pickled out abundance dictionaries for each of the samples in their
-        # respective directories
-        # now go through each of samples and check to see if each of the seqs is found in the master seq dict
-        # or if it is a subset or superset of any of the strings. This has the potential to be very slow
-        # so we could maybe chunk this and do it MP. But for the time being lets try to do it serial.
-        # first we will go through each of the samples and generate a set of sequence for the master_abund_dict
-        # that will be the largest superset sequences of all the sequences found in the samples
-        # once we've done that, then we will go back through the sequences and see which sequences the sample's sequecnes
-        # should be associated to. We should pickle out along the way to save us time if we have to re-run
-
-        # just out of interest I want to see how many times we have a match list greater than 1
-        if os.path.isfile('{}/master_abund_dict.pickle'.format(os.getcwd())):
-            master_abund_dict = pickle.load(open('{}/master_abund_dict.pickle'.format(os.getcwd()), 'rb'))
-        else:
-            big_match_counter = 0
-            total = 0
-            master_abund_dict = defaultdict(float)
-            for ind in fig_info_df.index.values.tolist():
-                print('Counting {}'.format(ind))
-                sample_dir = fig_info_df.loc[ind, 'sample_dir']
-                sample_abund_dict = pickle.load(open('{}/seq_abund_dict.pickle'.format(sample_dir), 'rb'))
-                for sample_key_sequence, v_sample in sample_abund_dict.items():
-                    total += 1
-                    # for each of the sequences, see if it is found within one of the master_abund_dicts
-                    # check to see that it is not found in > than one of the sequences too. If it is then this is a problem
-                    # but there may be a simple solution, i.e. consolidating the two sequences.
-
-                    # list that holds the sequences that are either a subset or superset of the sample sequence
-                    match_list = []
-                    for master_key_sequence, v_master in master_abund_dict.items():
-
-                        if sample_key_sequence in master_key_sequence or master_key_sequence in sample_key_sequence:
-                            match_list.append(master_key_sequence)
-
-                    # here we have checked each of the master sequences
-                    if not match_list:
-                        # if the match list is empty then this is a new sequence and we can add it to the master_abund_dict
-                        master_abund_dict[sample_key_sequence] += v_sample
-                    elif len(match_list) == 1:
-                        # then we have a single match.
-                        if sample_key_sequence in match_list[0]:
-                            # if the sample is a subset of one of the master_abund_dicts then its
-                            # abundance should be attributed to this sequence
-                            master_abund_dict[match_list[0]] += v_sample
-                        elif match_list[0] in sample_key_sequence:
-                            # else if the sample sequences contains the master sequence, then the master sequence
-                            # should be updated to the seq in question, the current abundance should be associated
-                            # to this new sequence and the abundance of the seq in q should also be attributed (added)
-                            temp_abundance = master_abund_dict[match_list[0]]
-                            del master_abund_dict[match_list[0]]
-                            master_abund_dict[sample_key_sequence] = temp_abundance
-                            master_abund_dict[sample_key_sequence] += v_sample
-                    elif len(match_list) > 1:
-                        # then we have a bit of a problem here and we need to work out what to do from looking at the
-                        # situation
-                        # this is a particular situation and has happened when there is a sequence that is shorter than the
-                        # majority and one of the sequences has a differntiating snp in the difference in sequence length.
-                        # for the time being I will attribute the abundance of this sequence to the most abundant match
-                        most_abund_seq = [a[0] for a in sorted([(seq, master_abund_dict[seq]) for seq in match_list], key=lambda x: x[1], reverse=True)][0]
-                        master_abund_dict[most_abund_seq] += v_sample
-                        big_match_counter += 1
-                        continue
-            # at this point we have the master_abund_dict populated and we should pickle it out
-            pickle.dump(master_abund_dict, open('{}/master_abund_dict.pickle'.format(os.getcwd()), 'wb'))
-        apples = 'asdf'
-
-        # now we once again go sample by sample and then seq by seq and check all of the seqs
-        # thar are in the master dict. Then when we find an association we use that to populate to the dataframe
-        sorted_tups = sorted(list(master_abund_dict.items()), key=lambda x:x[1], reverse=True)
-        header_seq_s = [a[0] for a in sorted_tups]
-        sample_abundance_df = pd.DataFrame(columns=header_seq_s)
-
-        total_matches_evaluated = 0
-        multi_match_list = 0
-        no_match = 0
-        for ind in fig_info_df.index.values.tolist():
-
-            # create an empty sequence that will be full of float 0s to start with
-            sample_abundance_series = pd.Series(name=ind, data=[float(0) for i in header_seq_s], index=header_seq_s)
-            print('Populating df with {}'.format(ind))
-            sample_dir = fig_info_df.loc[ind, 'sample_dir']
-            if os.path.isfile('{}/sample_abundance_series.pkl'.format(sample_dir)):
-                sample_abundance_series = pd.read_pickle('{}/sample_abundance_series.pkl'.format(sample_dir))
-            else:
-                sample_abund_dict = pickle.load(open('{}/seq_abund_dict.pickle'.format(sample_dir), 'rb'))
-                # for every sequence in the sample
-                for sample_key_sequence, v_sample in sample_abund_dict.items():
-                    total_matches_evaluated += 1
-                    # list that holds the sequences that are either a subset or superset of the sample sequence
-                    match_list = []
-                    exact_match = False
-                    for master_key_sequence, v_master in master_abund_dict.items():
-                        if sample_key_sequence == master_key_sequence:
-                        # then we have an exact match and this is the sequence that the abundance should be associated
-                        # to.
-                        # else continue to work with the match_list etc.
-                            sample_abundance_series[master_key_sequence] += v_sample
-                            exact_match = True
-                            break
-                        if sample_key_sequence in master_key_sequence or master_key_sequence in sample_key_sequence:
-                            match_list.append(master_key_sequence)
-                    if exact_match:
-                        continue
-                    # here we have not acheived an exact match and we should work with the list
-                    # here we have checked each of the master sequences
-                    if not match_list:
-                        # this should never happen
-                        no_match += 1
-                        continue
-                    elif len(match_list) == 1:
-                        # then we have a single match and this is the column of the df that we should associate the
-                        # abundance to
-                        sample_abundance_series[match_list[0]] += v_sample
-
-                    elif len(match_list) > 1:
-                        # then we have a bit of a problem here and we need to work out what to do from looking at the
-                        # situation
-                        # this is a particular situation and has happened when there is a sequence that is shorter than the
-                        # majority and one of the sequences has a differntiating snp in the difference in sequence length.
-                        # for the time being I will attribute the abundance of this sequence to the most abundant match
-                        multi_match_list += 1
-                        sorted_tups_temp = sorted([(seq, master_abund_dict[seq]) for seq in match_list], key=lambda x: x[1],
-                                                 reverse=True)
-                        most_abund_seq = [a[0] for a in sorted_tups_temp][0]
-                        sample_abundance_series[most_abund_seq] += v_sample
-                # here we have the series for the sample populated.
-                # now add this to the dataframe
-                # pickle out the series to save time
-                sample_abundance_series.to_pickle('{}/sample_abundance_series.pkl'.format(sample_dir))
-            sample_abundance_df = sample_abundance_df.append(sample_abundance_series)
-        # at this point we have fully populated the sample_abundance_df and we should pickle it out
-        sample_abundance_df.to_pickle('{}/sample_abundance_df.pkl'.format(os.getcwd()))
-
-    return sample_abundance_df
-
-def abundance_worker(input_q):
-    # within this method we will aim to create a dict and pickle it out so that it can be read in outside
-    # of this MP.
-    for sample_name, sample_dir in iter(input_q.get, 'STOP'):
-        # check to see if the sample's abundance dictionary has already been created
-        if os.path.isfile('{}/seq_abund_dict.pickle'.format(sample_dir)):
-            continue
-
-        # I want this dictionary to have key as the raw sequence as value
-        sample_dict = defaultdict(int)
-
-        sys.stdout.write('\nSample {}\n'.format(sample_dir))
-
-        # for each sample we will only need two files
-        # we will need the name file inorder to create an abundance dict
-        # then we will need the coral_genus_only.fasta file so that we know which sequences we should be counting
-
-        #read in the name file
-        with open('{}/stability.trim.contigs.good.abund.pcr.names'.format(sample_dir), 'r') as f:
-            name_file = [line.rstrip() for line in f]
-
-        abund_dict = {line.split('\t')[0]:len(line.split('\t')[1].split(',')) for line in name_file}
-
-        # now read in the coral_genus_only.fasta
-        with open('{}/coral_genus_only.fasta'.format(sample_dir), 'r') as f:
-            coral_genus_fasta = [line.rstrip() for line in f]
-
-        # here we have the abund dict and the coral_genus fasta
-        # now we can go sesquence by sequence through the fasta and look up the abund and add to the sample_dict
-        # Becuase we didn't do a find seqs.unique it is quite possible that there are sequences that are the same
-        # and so we should use a default dict to make the abundance dictionary for the sample
-        for i in range(0, len(coral_genus_fasta), 2):
-            sample_dict[coral_genus_fasta[i + 1]] += abund_dict[coral_genus_fasta[i][1:]]
-
-        # now normalise the seq abundances
-        tot_seqs = sum(sample_dict.values())
-        normalised_sample_dict = {k: v/tot_seqs for k, v in sample_dict.items()}
-
-        # here we have the samples abundance dictionary populated. Now pickle out
-        pickle.dump(normalised_sample_dict, open('{}/seq_abund_dict.pickle'.format(sample_dir), 'wb'))
-
-
-    return
-
-def remove_axes_but_allow_labels(ax, x_tick_label_list=None):
-    ax.set_frame_on(False)
-    if not x_tick_label_list:
-        ax.set_xticks([])
-    ax.set_yticks([])
-    ax.minorticks_off()
-
-def generate_post_qc_taxa_df():
-
-    if os.path.isfile('{}/tax_absolute_abund_df.pickle'.format(os.getcwd())):
-        tax_absolute_abund_df = pickle.load(open('{}/tax_absolute_abund_df.pickle'.format(os.getcwd()), 'rb'))
-    else:
-        info_df = generate_info_df_for_samples()
-
-        fig_info_df = generate_fig_indo_df(info_df)
-
-        input_q = Queue()
-
-        for ind in fig_info_df.index.values.tolist():
-            input_q.put((ind, fig_info_df.loc[ind, 'sample_dir']))
-
-        numProc = 20
-        for n in range(numProc):
-            input_q.put('STOP')
-
-        all_procs = []
-        for n in range(numProc):
-            p = Process(target=qc_abundance_worker, args=(input_q,))
-            all_procs.append(p)
-            p.start()
-
-        for p in all_procs:
-            p.join()
-
-        # at this point we have the sample_tax_category_dict items for each sample pickled out
-        # we can now go through each of the sample_dir again and use them to populate the master df
-        # which we will then return
-        tax_columns = ['Porites', 'Millepora', 'Pocillopora', 'other_coral', 'Symbiodiniaceae', 'other_taxa']
-        tax_absolute_abund_df = pd.DataFrame(columns=tax_columns)
-        for ind in fig_info_df.index.values.tolist():
-            sample_dir = fig_info_df.loc[ind, 'sample_dir']
-
-            # load the sample_tax_category_dict
-            sample_tax_category_dict = pickle.load(open('{}/sample_tax_category_dict.pickle'.format(sample_dir), 'rb'))
-
-            sample_data = []
-            for cat in tax_columns:
-                if cat in sample_tax_category_dict.keys():
-                    sample_data.append(sample_tax_category_dict[cat])
-                else:
-                    sample_data.append(0)
-            tax_absolute_abund_df = tax_absolute_abund_df.append(pd.Series(data=sample_data, index=tax_columns, name=ind))
-
-        # here we have the tax_absolute_abund_df populated
-        # now pickle it out
-        pickle.dump(tax_absolute_abund_df, open('{}/tax_absolute_abund_df.pickle'.format(os.getcwd()), 'wb'))
-    return tax_absolute_abund_df
-
-def qc_abundance_worker(input_q):
-    # the aim of this worker will be to pickle out a abund_tax_dict that will have the keys
-    # pocillopora, millepora, porites, other_host, symbiodiniacea, other_taxa
-    for sample_name, sample_dir in iter(input_q.get, 'STOP'):
-        if os.path.isfile('{}/sample_tax_category_dict.pickle'.format(sample_dir)):
-            continue
-        sys.stdout.write('\nSample {}\n'.format(sample_name))
-        # read in names file
-        with open('{}/stability.trim.contigs.good.abund.pcr.names'.format(sample_dir), 'r') as f:
-            name_file = [line.rstrip() for line in f]
-
-        # from this we can get the other taxa as any taxa that's value isn't 'Scleractinia' or 'Symbiodiniacea'
-        sample_tax_dict = pickle.load(open('{}/sample_tax_dict.pickle'.format(sample_dir), 'rb'))
-        # from this the value is the genus. So we can search for 'Porites', 'Millepora', 'Pocillopora'
-        coral_dict = pickle.load(open('{}/coral_dict.pickle'.format(sample_dir), 'rb'))
-        # each of the sequence names in this is symbiodiniaceae so we can simply count these
-        symbiodiniaceae_dict = pickle.load(open('{}/symbiodiniaceae_dict.pickle'.format(sample_dir), 'rb'))
-
-        sample_tax_category_dict = defaultdict(int)
-        # go through the name file line by line identifying what it belongs to
-        for line in name_file:
-            abundance = len(line.split('\t')[1].split(','))
-            seq_name = line.split('\t')[0]
-            if seq_name in coral_dict.keys():
-                genus_name = coral_dict[seq_name]
-                if genus_name in ['Porites', 'Millepora', 'Pocillopora']:
-                    sample_tax_category_dict[genus_name] += abundance
-                else:
-                    # then this another coral
-                    sample_tax_category_dict['other_coral'] += abundance
-            elif seq_name in symbiodiniaceae_dict.keys():
-                sample_tax_category_dict['Symbiodiniaceae'] += abundance
-            elif seq_name in sample_tax_dict.keys():
-                sample_tax_category_dict['other_taxa'] += abundance
-
-        # here we have the sample_tax_category_dict populated and we can now pickle it out
-        pickle.dump(sample_tax_category_dict, open('{}/sample_tax_category_dict.pickle'.format(sample_dir), 'wb'))
-
-
 # For each sample I will generate a scleractinian sequences fasta and a fasta that contains only the sequencs
 # for the coral that the sample is supposed to be, i.e. porites, pocillopora or millepora
 # From here we should then be able to make the figures as we have before for the ITS2
@@ -2106,218 +1427,6 @@ def generate_summary_figure():
     return
 
 
-# the sequence_QC method has taken care of the basic mothur qc for us. The next step will be to run a blast
-# analysis for each of the samples that we have
-# In each directory we should have a stability.trim.contigs.good.unique.abund.pcr.fasta paired with a
-# stability.trim.contigs.good.abund.pcr.names. We should work with these pairs and produce a dictionary
-# that will give sequence name to taxonomic id.
-
-def generate_tax_dictionaries(numProc=20):
-    # we are only interested in the coral samples.
-    # as such we should filter these out when doing the MPing.
-    info_df = generate_info_df_for_samples()
-
-    ncbircFile = []
-    db_path = '/home/humebc/phylogeneticSoftware/ncbi-blast-2.6.0+/ntdbdownload'
-    ncbircFile.extend(["[BLAST]", "BLASTDB={}".format(db_path)])
-
-    # write out the ncbircFile
-    with open('{}/.ncbirc'.format(os.getcwd()), 'w') as f:
-        for line in ncbircFile:
-            f.write('{}\n'.format(line))
-
-
-    input_q_for_blast = Queue()
-
-    for ind in info_df.index.values.tolist():
-        if 'CORAL' in info_df.loc[ind, 'fastq_fwd_file_path']:
-            input_q_for_blast.put(info_df.loc[ind, 'fastq_fwd_file_path'])
-
-    for n in range(numProc):
-        input_q_for_blast.put('STOP')
-
-    # generate the dictionaries used for taxa_designation
-    # send a copy to each of the processes
-    node_dict, name_dict = generate_taxa_designation_from_staxid_dicts()
-
-    all_procs = []
-    for n in range(numProc):
-        p = Process(target=blast_worker, args=(input_q_for_blast, node_dict, name_dict))
-        all_procs.append(p)
-        p.start()
-
-    for p in all_procs:
-        p.join()
-
-    return
-
-def generate_taxa_designation_from_staxid_dicts(taxdump_dir = '/home/humebc/phylogeneticSoftware/ncbi-blast-2.6.0+/ntdbdownload/taxdump'):
-    # read in the .nodes file. This file tells us which tax level the node is and which node is the parent level
-    with open('{}/nodes.dmp'.format(taxdump_dir), 'r') as f:
-        node_file = [line.rstrip() for line in f]
-    # now make a dict from this where key is the tax id and the value is a tup where 0 = parent 1 = tax level
-    node_dict = {line.split('\t|\t')[0]: (line.split('\t|\t')[1], line.split('\t|\t')[2]) for line in node_file}
-
-    # next read in the names file. This file hold the name of the node.
-    with open('{}/names.dmp'.format(taxdump_dir), 'r') as f:
-        name_file = [line.rstrip() for line in f]
-
-    # now make a dict from the names file where the key is the staxid and the value is the name
-    name_dict = {line.split('\t|\t')[0]: line.split('\t|\t')[1] for line in name_file if line.split('\t|\t')[3].replace('\t|', '') == 'scientific name'}
-
-    return node_dict, name_dict
-
-def get_taxa_designation_from_staxid(staxid, tax_level_list, node_dict=None, name_dict=None, taxdump_dir = '/home/humebc/phylogeneticSoftware/ncbi-blast-2.6.0+/ntdbdownload/taxdump'):
-    #I have set this up so that you can either feed in the already made node_dict and name_dict or
-    # you they can be generated by this method. If you are running this method many times it will make
-    # sense to run the above generate_taxa_designation_from_staxid_dicts methods
-    # to generate the dicts to feed into this
-    # This will take in a list as its argument and find the levels that are listed in the list
-    list_to_return = [False for i in tax_level_list]
-    if node_dict==None or name_dict==None:
-        node_dict, name_dict = generate_taxa_designation_from_staxid_dicts()
-
-    # now we can do the searching
-    # go through staxid nodes until we get to the tax_level required
-    # then grab the name
-    current_staxid = staxid
-    while True:
-        if current_staxid == '1':
-            return list_to_return
-
-        current_tax_level = node_dict[current_staxid][1]
-
-        if current_tax_level in tax_level_list:
-            # then this is the taxonomic level we want, grab the name and return
-            list_to_return[tax_level_list.index(current_tax_level)] = name_dict[current_staxid]
-            if False not in list_to_return:
-                # then we have found all of the taxa_levels
-                return list_to_return
-            else:
-                # else we have not and we should continue the procession through the tax ids
-
-                current_staxid = node_dict[current_staxid][0]
-
-        else:
-            current_staxid = node_dict[current_staxid][0]
-
-def blast_worker(input_q, node_dict, name_dict):
-    # this is the mp worker. We will aim to go to each of the directories and perform a blast and
-    # and produce a dictionary that will be sequence id to taxonomic designation
-
-    for path in iter(input_q.get, 'STOP'):
-        sys.stdout.write('\nSample {}\n'.format(path.split('/')[-1]))
-
-        sample_dir = '/'.join(path.split('/')[:-1])
-        # we only need to be doing this sample if it hasn't already been done.
-        if os.path.isfile('{}/sample_tax_dict.pickle'.format(sample_dir)) and os.path.isfile('{}/coral_dict.pickle'.format(sample_dir)) and os.path.isfile('{}/symbiodiniaceae_dict.pickle'.format(sample_dir)):
-            continue
-
-        # write out the screened fasta so that it can be read in to the blast
-        # make sure to reference the sequence support and the iteration
-        input_fasta_path = '{}/stability.trim.contigs.good.unique.abund.pcr.fasta'.format(sample_dir)
-
-
-        # Set up environment for running local blast
-        blastOutputPath = '{}/blast.out'.format(sample_dir)
-        outputFmt = "6 qseqid sseqid staxids evalue pident qcovs staxid stitle ssciname"
-
-        # no need to run blast if it has already been run and results have been pickled out
-        if os.path.isfile('{}.pickle'.format(blastOutputPath)):
-            blast_output_file = pickle.load(open('{}.pickle'.format(blastOutputPath), 'rb'))
-        else:
-            # Run local blast
-            # completedProcess = subprocess.run([blastnPath, '-out', blastOutputPath, '-outfmt', outputFmt, '-query', inputPath, '-db', 'symbiodinium.fa', '-max_target_seqs', '1', '-num_threads', '1'])
-            subprocess.run(
-                ['blastn', '-out', blastOutputPath, '-outfmt', outputFmt, '-query', input_fasta_path, '-db', 'nt',
-                 '-max_target_seqs', '10', '-num_threads', '20'])
-
-            # Read in blast output
-            with open(blastOutputPath, 'r') as f:
-                blast_output_file = [line.rstrip() for line in f]
-
-            # pickle out the blast results here to possibly save us time in the future
-            pickle.dump(blast_output_file, open('{}.pickle'.format(blastOutputPath), 'wb'))
-
-        # now create a dict that is the list of 10 results for linked to a key of the sample name
-        blast_output_dict = defaultdict(list)
-        for output_line in blast_output_file:
-            components = output_line.split('\t')
-            blast_output_dict[components[0]].append(components)
-
-        # at this point we should have the blast output result read in
-        # we can now make the taxa dictionary
-        # this dict will hold the taxa for all samples
-        sample_tax_dict = {}
-        # this dict will hold the matches for a subset which are the coral samples
-        coral_dict = {}
-        # this dict will hold the matches for a subset which are the symbiodiniaceae samples
-        symbiodiniaceae_dict = {}
-        for blast_key, comp_list_list in blast_output_dict.items():
-            sys.stdout.write('\rsequence {}'.format(blast_key))
-            symbiodiniaceae_count = 0
-            symbiodiniaceae_genus_dict = defaultdict(int)
-            coral_count = 0
-            # a dictionary that will keep track of which genus was the most abundant within the scleractinians
-            coral_genus_dict = defaultdict(int)
-            other_genus_count_dict = defaultdict(int)
-            for comp_list in comp_list_list:
-
-                # first check to see if the family is Symbiodiniacea
-                try:
-                    genus_level, family_level, order_level = get_taxa_designation_from_staxid(staxid=comp_list[6], tax_level_list=['genus', 'family', 'order'], node_dict=node_dict, name_dict=name_dict)
-                except:
-                    # there are some tax_ids that we don't seem to be able to find
-                    # for the time being we will just continue over this seqeunce
-                    continue
-                if False in [genus_level, family_level, order_level]:
-                    continue
-
-                if family_level == 'Symbiodiniaceae':
-                    symbiodiniaceae_count += 1
-                    symbiodiniaceae_genus_dict[genus_level] += 1
-
-                elif  order_level == 'Scleractinia' or order_level== 'Anthoathecata':
-                    # check to see if we have a coral here and if we do, sore the genus
-                    coral_count += 1
-                    coral_genus_dict[genus_level] += 1
-                else:
-                    # if this is not coral and not symbiodinium then we populate the orther_genus_count_dict
-                    other_genus_count_dict[genus_level] += 1
-
-            # here we have been through each of the 10 hits for the sample and we should populate the
-            # sample_tax_dict and the other dicts if the sample is either coral or Symbiodinium
-            # see which is the biggest the Sym count or the scler or the other
-            # first check to see if there were some annotations found
-
-            if len(other_genus_count_dict.items()) > 0:
-                max_other_taxa_count = max(other_genus_count_dict.values())
-            else:
-                max_other_taxa_count = 0
-                if coral_count == 0 and symbiodiniaceae_count == 0:
-                    # then we have had no valid annotations for this seqeunce
-                    continue
-            if max_other_taxa_count > max(coral_count, symbiodiniaceae_count):
-                # then this is a not one of the subsets
-                sample_tax_dict[blast_key] = [a[0] for a in sorted(other_genus_count_dict.items(), key=lambda x:x[1], reverse=True)][0]
-            elif coral_count > max(max_other_taxa_count, symbiodiniaceae_count):
-                # then this is a scleratinian and we should store the order
-                sample_tax_dict[blast_key] = 'Scleractinia'
-                # for the scleractinian dictionary we should associate to the most abundant genus
-                most_abundant_genus_sclerac = [a[0] for a in sorted(coral_genus_dict.items(), key=lambda x:x[1], reverse=True)][0]
-                coral_dict[blast_key] = most_abundant_genus_sclerac
-            elif symbiodiniaceae_count > max(max_other_taxa_count, coral_count):
-                # then this is a Symbiodiniaceae and we should store the genus in the specific dictionary
-                sample_tax_dict[blast_key] = 'Symbiodiniaceae'
-                # for the symbiodiniaceae dictinary we should associate to the most abundant genus
-                most_abundant_genus_symbiodin = \
-                [a[0] for a in sorted(symbiodiniaceae_genus_dict.items(), key=lambda x: x[1], reverse=True)][0]
-                symbiodiniaceae_dict[blast_key] = most_abundant_genus_symbiodin
-        # here we have populated the taxonomy dictionaries for the sample in question
-        # we can now pickle out the dictionaries
-        pickle.dump(sample_tax_dict, open('{}/sample_tax_dict.pickle'.format(sample_dir), 'wb'))
-        pickle.dump(coral_dict, open('{}/coral_dict.pickle'.format(sample_dir), 'wb'))
-        pickle.dump(symbiodiniaceae_dict, open('{}/symbiodiniaceae_dict.pickle'.format(sample_dir), 'wb'))
 
 # TODO we should be able to delete all of these
 # This is a function to parse over the directory stucture that was on the TARA/Genescope ftp and create
@@ -2601,6 +1710,225 @@ class EighteenSAnalysis:
         # This is the sample order from the its2 work
         self.sample_order = pickle.load(open(os.path.join(self.input_dir, 'ordered_sample_names_from_its2_work.pickle'), 'rb'))
 
+        self.blast_nt_db_path = '/home/humebc/phylogeneticSoftware/ncbi-blast-2.6.0+/ntdbdownload'
+
+    def identify_taxa_of_seqs_in_coral_samples(self, numProc=20):
+        """The sequence_QC method has taken care of the basic mothur qc for us. The next step will be to run a blast
+        analysis for each of the samples that we have
+        In each directory we should have a stability.trim.contigs.good.unique.abund.pcr.fasta paired with a
+        stability.trim.contigs.good.abund.pcr.names. We should work with these pairs and produce a dictionary
+        that will give sequence name to taxonomic id.
+        We are only interested in the coral samples.
+        As such we should filter these out when doing the MPing.
+        """
+
+        ncbircFile = []
+        ncbircFile.extend(["[BLAST]", "BLASTDB={}".format(self.blast_nt_db_path)])
+
+        # write out the ncbircFile
+        with open(os.path.join(self.root_dir, '.ncbirc'), 'w') as f:
+            for line in ncbircFile:
+                f.write('{}\n'.format(line))
+
+        input_q_for_blast = Queue()
+
+        for ind in self.all_samples_info_df.index.values.tolist():
+            if 'CORAL' in self.all_samples_info_df.loc[ind, 'fastq_fwd_file_path']:
+                input_q_for_blast.put(self.all_samples_info_df.loc[ind, 'fastq_fwd_file_path'])
+
+        for n in range(numProc):
+            input_q_for_blast.put('STOP')
+
+        # generate the dictionaries used for taxa_designation
+        # send a copy to each of the processes
+        node_dict, name_dict = self._generate_taxa_designation_from_staxid_dicts()
+
+        all_procs = []
+        for n in range(numProc):
+            p = Process(target=blast_worker, args=(input_q_for_blast, node_dict, name_dict))
+            all_procs.append(p)
+            p.start()
+
+        for p in all_procs:
+            p.join()
+
+        return
+
+    def _generate_taxa_designation_from_staxid_dicts(self,
+            taxdump_dir='/home/humebc/phylogeneticSoftware/ncbi-blast-2.6.0+/ntdbdownload/taxdump'):
+        # read in the .nodes file. This file tells us which tax level the node is and which node is the parent level
+        with open('{}/nodes.dmp'.format(taxdump_dir), 'r') as f:
+            node_file = [line.rstrip() for line in f]
+        # now make a dict from this where key is the tax id and the value is a tup where 0 = parent 1 = tax level
+        node_dict = {line.split('\t|\t')[0]: (line.split('\t|\t')[1], line.split('\t|\t')[2]) for line in node_file}
+
+        # next read in the names file. This file hold the name of the node.
+        with open('{}/names.dmp'.format(taxdump_dir), 'r') as f:
+            name_file = [line.rstrip() for line in f]
+
+        # now make a dict from the names file where the key is the staxid and the value is the name
+        name_dict = {line.split('\t|\t')[0]: line.split('\t|\t')[1] for line in name_file if
+                     line.split('\t|\t')[3].replace('\t|', '') == 'scientific name'}
+
+        return node_dict, name_dict
+
+    def _get_taxa_designation_from_staxid(self, staxid, tax_level_list, node_dict=None, name_dict=None,
+                                         taxdump_dir='/home/humebc/phylogeneticSoftware/ncbi-blast-2.6.0+/ntdbdownload/taxdump'):
+        # I have set this up so that you can either feed in the already made node_dict and name_dict or
+        # you they can be generated by this method. If you are running this method many times it will make
+        # sense to run the above generate_taxa_designation_from_staxid_dicts methods
+        # to generate the dicts to feed into this
+        # This will take in a list as its argument and find the levels that are listed in the list
+        list_to_return = [False for i in tax_level_list]
+        if node_dict == None or name_dict == None:
+            node_dict, name_dict = self._generate_taxa_designation_from_staxid_dicts()
+
+        # now we can do the searching
+        # go through staxid nodes until we get to the tax_level required
+        # then grab the name
+        current_staxid = staxid
+        while True:
+            if current_staxid == '1':
+                return list_to_return
+
+            current_tax_level = node_dict[current_staxid][1]
+
+            if current_tax_level in tax_level_list:
+                # then this is the taxonomic level we want, grab the name and return
+                list_to_return[tax_level_list.index(current_tax_level)] = name_dict[current_staxid]
+                if False not in list_to_return:
+                    # then we have found all of the taxa_levels
+                    return list_to_return
+                else:
+                    # else we have not and we should continue the procession through the tax ids
+
+                    current_staxid = node_dict[current_staxid][0]
+
+            else:
+                current_staxid = node_dict[current_staxid][0]
+
+    def _blast_worker(self, input_q, node_dict, name_dict):
+        # this is the mp worker. We will aim to go to each of the directories and perform a blast and
+        # and produce a dictionary that will be sequence id to taxonomic designation
+
+        for path in iter(input_q.get, 'STOP'):
+            sys.stdout.write('\nSample {}\n'.format(path.split('/')[-1]))
+
+            sample_dir = '/'.join(path.split('/')[:-1])
+            # we only need to be doing this sample if it hasn't already been done.
+            if os.path.isfile('{}/sample_tax_dict.pickle'.format(sample_dir)) and os.path.isfile(
+                    '{}/coral_dict.pickle'.format(sample_dir)) and os.path.isfile(
+                    '{}/symbiodiniaceae_dict.pickle'.format(sample_dir)):
+                continue
+
+            # write out the screened fasta so that it can be read in to the blast
+            # make sure to reference the sequence support and the iteration
+            input_fasta_path = '{}/stability.trim.contigs.good.unique.abund.pcr.fasta'.format(sample_dir)
+
+            # Set up environment for running local blast
+            blastOutputPath = '{}/blast.out'.format(sample_dir)
+            outputFmt = "6 qseqid sseqid staxids evalue pident qcovs staxid stitle ssciname"
+
+            # no need to run blast if it has already been run and results have been pickled out
+            if os.path.isfile('{}.pickle'.format(blastOutputPath)):
+                blast_output_file = pickle.load(open('{}.pickle'.format(blastOutputPath), 'rb'))
+            else:
+                # Run local blast
+                subprocess.run(
+                    ['blastn', '-out', blastOutputPath, '-outfmt', outputFmt, '-query', input_fasta_path, '-db', 'nt',
+                     '-max_target_seqs', '10', '-num_threads', '20'])
+
+                # Read in blast output
+                with open(blastOutputPath, 'r') as f:
+                    blast_output_file = [line.rstrip() for line in f]
+
+                # pickle out the blast results here to possibly save us time in the future
+                pickle.dump(blast_output_file, open('{}.pickle'.format(blastOutputPath), 'wb'))
+
+            # now create a dict that is the list of 10 results for linked to a key of the sample name
+            blast_output_dict = defaultdict(list)
+            for output_line in blast_output_file:
+                components = output_line.split('\t')
+                blast_output_dict[components[0]].append(components)
+
+            # at this point we should have the blast output result read in
+            # we can now make the taxa dictionary
+            # this dict will hold the taxa for all samples
+            sample_tax_dict = {}
+            # this dict will hold the matches for a subset which are the coral samples
+            coral_dict = {}
+            # this dict will hold the matches for a subset which are the symbiodiniaceae samples
+            symbiodiniaceae_dict = {}
+            for blast_key, comp_list_list in blast_output_dict.items():
+                sys.stdout.write('\rsequence {}'.format(blast_key))
+                symbiodiniaceae_count = 0
+                symbiodiniaceae_genus_dict = defaultdict(int)
+                coral_count = 0
+                # a dictionary that will keep track of which genus was the most abundant within the scleractinians
+                coral_genus_dict = defaultdict(int)
+                other_genus_count_dict = defaultdict(int)
+                for comp_list in comp_list_list:
+
+                    # first check to see if the family is Symbiodiniacea
+                    try:
+                        genus_level, family_level, order_level = self._get_taxa_designation_from_staxid(
+                            staxid=comp_list[6], tax_level_list=['genus', 'family', 'order'],
+                            node_dict=node_dict, name_dict=name_dict)
+                    except:
+                        # there are some tax_ids that we don't seem to be able to find
+                        # for the time being we will just continue over this seqeunce
+                        continue
+                    if False in [genus_level, family_level, order_level]:
+                        continue
+
+                    if family_level == 'Symbiodiniaceae':
+                        symbiodiniaceae_count += 1
+                        symbiodiniaceae_genus_dict[genus_level] += 1
+
+                    elif order_level == 'Scleractinia' or order_level == 'Anthoathecata':
+                        # check to see if we have a coral here and if we do, sore the genus
+                        coral_count += 1
+                        coral_genus_dict[genus_level] += 1
+                    else:
+                        # if this is not coral and not symbiodinium then we populate the orther_genus_count_dict
+                        other_genus_count_dict[genus_level] += 1
+
+                # here we have been through each of the 10 hits for the sample and we should populate the
+                # sample_tax_dict and the other dicts if the sample is either coral or Symbiodinium
+                # see which is the biggest the Sym count or the scler or the other
+                # first check to see if there were some annotations found
+
+                if len(other_genus_count_dict.items()) > 0:
+                    max_other_taxa_count = max(other_genus_count_dict.values())
+                else:
+                    max_other_taxa_count = 0
+                    if coral_count == 0 and symbiodiniaceae_count == 0:
+                        # then we have had no valid annotations for this seqeunce
+                        continue
+                if max_other_taxa_count > max(coral_count, symbiodiniaceae_count):
+                    # then this is a not one of the subsets
+                    sample_tax_dict[blast_key] = \
+                    [a[0] for a in sorted(other_genus_count_dict.items(), key=lambda x: x[1], reverse=True)][0]
+                elif coral_count > max(max_other_taxa_count, symbiodiniaceae_count):
+                    # then this is a scleratinian and we should store the order
+                    sample_tax_dict[blast_key] = 'Scleractinia'
+                    # for the scleractinian dictionary we should associate to the most abundant genus
+                    most_abundant_genus_sclerac = \
+                    [a[0] for a in sorted(coral_genus_dict.items(), key=lambda x: x[1], reverse=True)][0]
+                    coral_dict[blast_key] = most_abundant_genus_sclerac
+                elif symbiodiniaceae_count > max(max_other_taxa_count, coral_count):
+                    # then this is a Symbiodiniaceae and we should store the genus in the specific dictionary
+                    sample_tax_dict[blast_key] = 'Symbiodiniaceae'
+                    # for the symbiodiniaceae dictinary we should associate to the most abundant genus
+                    most_abundant_genus_symbiodin = \
+                        [a[0] for a in sorted(symbiodiniaceae_genus_dict.items(), key=lambda x: x[1], reverse=True)][0]
+                    symbiodiniaceae_dict[blast_key] = most_abundant_genus_symbiodin
+            # here we have populated the taxonomy dictionaries for the sample in question
+            # we can now pickle out the dictionaries
+            pickle.dump(sample_tax_dict, open('{}/sample_tax_dict.pickle'.format(sample_dir), 'wb'))
+            pickle.dump(coral_dict, open('{}/coral_dict.pickle'.format(sample_dir), 'wb'))
+            pickle.dump(symbiodiniaceae_dict, open('{}/symbiodiniaceae_dict.pickle'.format(sample_dir), 'wb'))
+
     def plot_seq_stacked_bar_plots(self, plot_type):
         """This method produced stacked bar charts. It can produce different charts depending on the plot_type.
                 'full' means all of the sequences including the maj
@@ -2657,7 +1985,7 @@ class EighteenSAnalysis:
                 # now put in the spacer row
                 if increaser < 2:
                     ax_space = plt.subplot(gs[row_ind + 1 + increaser, :])
-                    remove_axes_but_allow_labels(ax_space)
+                    self._remove_axes_but_allow_labels(ax_space)
                     increaser += 1
             return ax_list, fig
 
@@ -2683,7 +2011,7 @@ class EighteenSAnalysis:
                 self._plot_data_axes_18s(minor_DIV=False,
                                    qc=True)
 
-            add_labels(self.ax_list)
+            self._add_labels(self.ax_list)
 
             if self.plot_type == 'full':
                 plt.savefig(os.path.join(self.parent.figure_output_dir, 'raw_seqs_abund_stacked.png'))
@@ -2701,6 +2029,12 @@ class EighteenSAnalysis:
                 plt.savefig(os.path.join(self.parent.figure_output_dir, 'post_qc_absolute.png'))
                 plt.savefig(os.path.join(self.parent.figure_output_dir, 'post_qc_absolute.svg'))
 
+        def _remove_axes_but_allow_labels(ax, x_tick_label_list=None):
+            ax.set_frame_on(False)
+            if not x_tick_label_list:
+                ax.set_xticks([])
+            ax.set_yticks([])
+            ax.minorticks_off()
 
         def _create_med_node_sample_abundance_df_for_minor_intras(self):
             """
@@ -2883,14 +2217,10 @@ class EighteenSAnalysis:
             if os.path.isfile(os.path.join(self.parent.cache_dir, 'tax_absolute_abund_df.p')):
                 tax_absolute_abund_df = pickle.load(open(os.path.join(self.parent.cache_dir, 'tax_absolute_abund_df.p'), 'rb'))
             else:
-                info_df = generate_info_df_for_samples()
-
-                fig_info_df = generate_fig_indo_df(info_df)
-
                 input_q = Queue()
 
-                for ind in fig_info_df.index.values.tolist():
-                    input_q.put((ind, fig_info_df.loc[ind, 'sample_dir']))
+                for ind in self.parent.figure_output_dir.index.values.tolist():
+                    input_q.put((ind, self.parent.figure_output_dir.loc[ind, 'sample_dir']))
 
                 numProc = 20
                 for n in range(numProc):
@@ -2910,8 +2240,8 @@ class EighteenSAnalysis:
                 # which we will then return
                 tax_columns = ['Porites', 'Millepora', 'Pocillopora', 'other_coral', 'Symbiodiniaceae', 'other_taxa']
                 tax_absolute_abund_df = pd.DataFrame(columns=tax_columns)
-                for ind in fig_info_df.index.values.tolist():
-                    sample_dir = fig_info_df.loc[ind, 'sample_dir']
+                for ind in self.parent.figure_output_dir.index.values.tolist():
+                    sample_dir = self.parent.figure_output_dir.loc[ind, 'sample_dir']
 
                     # load the sample_tax_category_dict
                     sample_tax_category_dict = pickle.load(
@@ -3092,6 +2422,27 @@ class EighteenSAnalysis:
                 ax.set_xticks([])
             ax.set_yticks([])
             ax.minorticks_off()
+
+        def _add_labels(ax_list):
+            ax_list[1].set_title('ISLAND06')
+            ax_list[4].set_title('ISLAND10')
+            ax_list[7].set_title('ISLAND15')
+
+            ax_list[0].set_ylabel('SITE 1', fontsize='x-large')
+            ax_list[9].set_ylabel('SITE 2', fontsize='x-large')
+            ax_list[18].set_ylabel('SITE 3', fontsize='x-large')
+
+            ax_list[18].set_xlabel('porites', fontsize='medium')
+            ax_list[19].set_xlabel('pocillopora', fontsize='medium')
+            ax_list[20].set_xlabel('millepora', fontsize='medium')
+
+            ax_list[21].set_xlabel('porites', fontsize='medium')
+            ax_list[22].set_xlabel('pocillopora', fontsize='medium')
+            ax_list[23].set_xlabel('millepora', fontsize='medium')
+
+            ax_list[24].set_xlabel('porites', fontsize='medium')
+            ax_list[25].set_xlabel('pocillopora', fontsize='medium')
+            ax_list[26].set_xlabel('millepora', fontsize='medium')
 
         def _plot_div_over_type_18s(self, colour_list, ind, patches_list, smple_id_to_plot):
             bottom_div = 0
@@ -3838,6 +3189,7 @@ class EighteenSAnalysis:
 
 eighteen_s_analysis = EighteenSAnalysis()
 # eighteen_s_analysis.do_seq_qc()
+# eighteen_s_analysis.identify_taxa_of_seqs_in_coral_samples()
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='full')
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='low')
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_taxa_rel_abund')
