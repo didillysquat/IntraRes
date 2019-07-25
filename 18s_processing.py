@@ -22,42 +22,7 @@ from scipy.spatial.distance import braycurtis
 from skbio.stats.ordination import pcoa
 from mpl_toolkits.mplot3d import Axes3D
 from plumbum import local
-
-
-
-
-def get_colour_list():
-    colour_list = ["#FFFF00", "#1CE6FF", "#FF34FF", "#FF4A46", "#008941", "#006FA6", "#A30059", "#FFDBE5",
-                  "#7A4900", "#0000A6", "#63FFAC", "#B79762", "#004D43", "#8FB0FF", "#997D87", "#5A0007", "#809693",
-                  "#FEFFE6", "#1B4400", "#4FC601", "#3B5DFF", "#4A3B53", "#FF2F80", "#61615A", "#BA0900", "#6B7900",
-                  "#00C2A0", "#FFAA92", "#FF90C9", "#B903AA", "#D16100", "#DDEFFF", "#000035", "#7B4F4B", "#A1C299",
-                  "#300018", "#0AA6D8", "#013349", "#00846F", "#372101", "#FFB500", "#C2FFED", "#A079BF", "#CC0744",
-                  "#C0B9B2", "#C2FF99", "#001E09", "#00489C", "#6F0062", "#0CBD66", "#EEC3FF", "#456D75", "#B77B68",
-                  "#7A87A1", "#788D66", "#885578", "#FAD09F", "#FF8A9A", "#D157A0", "#BEC459", "#456648", "#0086ED",
-                  "#886F4C", "#34362D", "#B4A8BD", "#00A6AA", "#452C2C", "#636375", "#A3C8C9", "#FF913F", "#938A81",
-                  "#575329", "#00FECF", "#B05B6F", "#8CD0FF", "#3B9700", "#04F757", "#C8A1A1", "#1E6E00", "#7900D7",
-                  "#A77500", "#6367A9", "#A05837", "#6B002C", "#772600", "#D790FF", "#9B9700", "#549E79", "#FFF69F",
-                  "#201625", "#72418F", "#BC23FF", "#99ADC0", "#3A2465", "#922329", "#5B4534", "#FDE8DC", "#404E55",
-                  "#0089A3", "#CB7E98", "#A4E804", "#324E72", "#6A3A4C", "#83AB58", "#001C1E", "#D1F7CE", "#004B28",
-                  "#C8D0F6", "#A3A489", "#806C66", "#222800", "#BF5650", "#E83000", "#66796D", "#DA007C", "#FF1A59",
-                  "#8ADBB4", "#1E0200", "#5B4E51", "#C895C5", "#320033", "#FF6832", "#66E1D3", "#CFCDAC", "#D0AC94",
-                  "#7ED379", "#012C58", "#7A7BFF", "#D68E01", "#353339", "#78AFA1", "#FEB2C6", "#75797C", "#837393",
-                  "#943A4D", "#B5F4FF", "#D2DCD5", "#9556BD", "#6A714A", "#001325", "#02525F", "#0AA3F7", "#E98176",
-                  "#DBD5DD", "#5EBCD1", "#3D4F44", "#7E6405", "#02684E", "#962B75", "#8D8546", "#9695C5", "#E773CE",
-                  "#D86A78", "#3E89BE", "#CA834E", "#518A87", "#5B113C", "#55813B", "#E704C4", "#00005F", "#A97399",
-                  "#4B8160", "#59738A", "#FF5DA7", "#F7C9BF", "#643127", "#513A01", "#6B94AA", "#51A058", "#A45B02",
-                  "#1D1702", "#E20027", "#E7AB63", "#4C6001", "#9C6966", "#64547B", "#97979E", "#006A66", "#391406",
-                  "#F4D749", "#0045D2", "#006C31", "#DDB6D0", "#7C6571", "#9FB2A4", "#00D891", "#15A08A", "#BC65E9",
-                  "#FFFFFE", "#C6DC99", "#203B3C", "#671190", "#6B3A64", "#F5E1FF", "#FFA0F2", "#CCAA35", "#374527",
-                  "#8BB400", "#797868", "#C6005A", "#3B000A", "#C86240", "#29607C", "#402334", "#7D5A44", "#CCB87C",
-                  "#B88183", "#AA5199", "#B5D6C3", "#A38469", "#9F94F0", "#A74571", "#B894A6", "#71BB8C", "#00B433",
-                  "#789EC9", "#6D80BA", "#953F00", "#5EFF03", "#E4FFFC", "#1BE177", "#BCB1E5", "#76912F", "#003109",
-                  "#0060CD", "#D20096", "#895563", "#29201D", "#5B3213", "#A76F42", "#89412E", "#1A3A2A", "#494B5A",
-                  "#A88C85", "#F4ABAA", "#A3F3AB", "#00C6C8", "#EA8B66", "#958A9F", "#BDC9D2", "#9FA064", "#BE4700",
-                  "#658188", "#83A485", "#453C23", "#47675D", "#3A3F00", "#061203", "#DFFB71", "#868E7E", "#98D058",
-                  "#6C8F7D", "#D7BFC2", "#3C3E6E", "#D83D66", "#2F5D9B", "#6C5E46", "#D25B88", "#5B656C", "#00B57F",
-                  "#545C46", "#866097", "#365D25", "#252F99", "#00CCFF", "#674E60", "#FC009C", "#92896B"]
-    return colour_list
+import cropping
 
 
 class EighteenSAnalysis:
@@ -92,6 +57,36 @@ class EighteenSAnalysis:
 
         self.symportal_seq_output_relative_path = '/home/humebc/projects/tara/initial_its2_processing/2018-10-21_08-59-37.620726.DIVs.relative.txt'
         self.symportal_profile_output_relative_path = '/home/humebc/projects/tara/initial_its2_processing/34_init_tara_standalone_all_samps_151018_2018-10-21_08-45-56.507454.profiles.relative.txt'
+
+    def plot_pcoa_spp_18s_its2(self):
+        es_its2_plotter = self.E18S_ITS2_PCOA_FIGURE(parent=self)
+        es_its2_plotter.plot()
+
+    def plot_pcoa_spp(self):
+        spp_pcoa_plotter = self.PlotPCoASpp(parent=self)
+        spp_pcoa_plotter.plot()
+
+    def plot_pcoa_spp_island(self):
+        spp_island_pcoa_plotter = self.PlotPCoASppIsland(parent=self)
+        spp_island_pcoa_plotter.plot()
+
+    def do_taxa_annotations(self):
+        annotater = self.TaxaAnnotation(parent=self)
+        annotater.annotate()
+
+    def plot_seq_stacked_bar_plots(self, plot_type):
+        """This method produced stacked bar charts. It can produce different charts depending on the plot_type.
+                'full' means all of the sequences including the maj
+                'low' means without the maj
+                'med' means without the maj and having been through med
+                'qc_taxa_rel_abund' means plot the relative abundance of the post qc taxa categories
+                'qc_absolute means' plot the absolute abundance of the post-qc sequences (all tax categories)"""
+        seq_stacked_bar_plotter = self.SeqStackedBarPlotter(plot_type=plot_type, parent=self)
+        seq_stacked_bar_plotter.plot()
+
+    def do_qc(self):
+        sqc = self.SequenceQC(parent = self)
+        sqc.do_seq_qc()
 
     class Generic_PCOA_DIST_Methods:
         """A class that will hold all of the methods that are required by the various PCoA-plotting classes"""
@@ -358,7 +353,7 @@ class EighteenSAnalysis:
                                                  0.2, 1,
                                                  0.2, 0.4])
             # we can have several axes lists so that we can populate them one by one
-            # first lets make the pcoa plot axes list
+            # first lets make the pcoa p lot axes list
             self.pcoa_axes_list = []
             # porites ax
             self.pcoa_axes_list.append(plt.subplot(self.gs[0, 2:7]))
@@ -382,7 +377,7 @@ class EighteenSAnalysis:
             self.max_n_rows_seqs = 7
             self.num_leg_cells_seqs = self.max_n_cols_seqs * self.max_n_rows_seqs
 
-        def plot_pcoa_spp_18s_its2(self):
+        def plot(self):
 
             # plotting of the PCOAs
 
@@ -457,7 +452,7 @@ class EighteenSAnalysis:
             for spp in ['PORITES', 'POCILLOPORA', 'MILLEPORA']:
                 for site in ['SITE01', 'SITE02', 'SITE03']:
                     for location in ['ISLAND06', 'ISLAND10', 'ISLAND15']:
-                        ax = self.ax_list[ax_count]
+                        ax = self.its2_axes_list[ax_count]
                         patches_list = []
                         ind = 0
                         colour_list = []
@@ -547,7 +542,7 @@ class EighteenSAnalysis:
                     bottom_type += depth
 
         def _add_labels_its2(self):
-            #TODO check that this is the right axis list, it could be pcoa instead
+
             self.its2_axes_list[0].set_title('ISLAND06', fontsize='large', fontweight='bold')
             self.its2_axes_list[1].set_title('ISLAND10', fontsize='large', fontweight='bold')
             self.its2_axes_list[2].set_title('ISLAND15', fontsize='large', fontweight='bold')
@@ -734,7 +729,6 @@ class EighteenSAnalysis:
 
                 pos_counter += 1
 
-    # TODO put into class
     class PlotPCoASpp(Generic_PCOA_DIST_Methods, GenericPlottingMethods):
 
         def __init__(self, parent):
@@ -743,7 +737,7 @@ class EighteenSAnalysis:
             self.colour_dict = {'SITE01': '#C0C0C0', 'SITE02': '#808080', 'SITE03': '#000000'}
             self.marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
 
-        def plot_pcoa_spp(self, is_three_d=False):
+        def plot(self, is_three_d=False):
             """
             This is the code for producing the 18s pcoa with either the 3rd and 4th PC underneath or a 3d graph.
             """
@@ -838,7 +832,6 @@ class EighteenSAnalysis:
                 plt.savefig(os.path.join(self.parent.figure_output_dir, 'spp_pcoa_with_pc3_pc4.png'), dpi=1200)
                 plt.savefig(os.path.join(self.parent.figure_output_dir, 'spp_pcoa_with_pc3_pc4.svg'))
 
-    # TODO put into class
     class PlotPCoASppIsland(Generic_PCOA_DIST_Methods, GenericPlottingMethods):
 
         def __init__(self, parent):
@@ -848,7 +841,7 @@ class EighteenSAnalysis:
             self.cache_dir = self.parent.cache_dir
             self.figure_output_dir = self.parent.figure_output_dir
 
-        def plot_pcoa_spp_island(self):
+        def plot(self):
             """
             This is the code for producing a pcoa per island per species.
             """
@@ -1048,236 +1041,228 @@ class EighteenSAnalysis:
                 open(os.path.join(self.cache_dir, f'spp_island_distance_dict_{spp}_{island}.p'), 'wb'))
             return spp_island_distance_dict
 
+    class TaxaAnnotation:
 
+        """Methods associated with doing the blasts to generate taxa annotations for sequences in samples"""
+        def __init__(self, parent):
+            self.parent = parent
 
+        def annotate(self, numProc=20):
+            """The sequence_QC method has taken care of the basic mothur qc for us. The next step will be to run a blast
+            analysis for each of the samples that we have
+            In each directory we should have a stability.trim.contigs.good.unique.abund.pcr.fasta paired with a
+            stability.trim.contigs.good.abund.pcr.names. We should work with these pairs and produce a dictionary
+            that will give sequence name to taxonomic id.
+            We are only interested in the coral samples.
+            As such we should filter these out when doing the MPing.
+            """
 
-    def identify_taxa_of_seqs_in_coral_samples(self, numProc=20):
-        """The sequence_QC method has taken care of the basic mothur qc for us. The next step will be to run a blast
-        analysis for each of the samples that we have
-        In each directory we should have a stability.trim.contigs.good.unique.abund.pcr.fasta paired with a
-        stability.trim.contigs.good.abund.pcr.names. We should work with these pairs and produce a dictionary
-        that will give sequence name to taxonomic id.
-        We are only interested in the coral samples.
-        As such we should filter these out when doing the MPing.
-        """
+            ncbircFile = []
+            ncbircFile.extend(["[BLAST]", "BLASTDB={}".format(self.parent.blast_nt_db_path)])
 
-        ncbircFile = []
-        ncbircFile.extend(["[BLAST]", "BLASTDB={}".format(self.blast_nt_db_path)])
+            # write out the ncbircFile
+            with open(os.path.join(self.parent.root_dir, '.ncbirc'), 'w') as f:
+                for line in ncbircFile:
+                    f.write('{}\n'.format(line))
 
-        # write out the ncbircFile
-        with open(os.path.join(self.root_dir, '.ncbirc'), 'w') as f:
-            for line in ncbircFile:
-                f.write('{}\n'.format(line))
+            input_q_for_blast = Queue()
 
-        input_q_for_blast = Queue()
+            for ind in self.parent.all_samples_info_df.index.values.tolist():
+                if 'CORAL' in self.parent.all_samples_info_df.loc[ind, 'fastq_fwd_file_path']:
+                    input_q_for_blast.put(self.parent.all_samples_info_df.loc[ind, 'fastq_fwd_file_path'])
 
-        for ind in self.all_samples_info_df.index.values.tolist():
-            if 'CORAL' in self.all_samples_info_df.loc[ind, 'fastq_fwd_file_path']:
-                input_q_for_blast.put(self.all_samples_info_df.loc[ind, 'fastq_fwd_file_path'])
+            for n in range(numProc):
+                input_q_for_blast.put('STOP')
 
-        for n in range(numProc):
-            input_q_for_blast.put('STOP')
-
-        # generate the dictionaries used for taxa_designation
-        # send a copy to each of the processes
-        node_dict, name_dict = self._generate_taxa_designation_from_staxid_dicts()
-
-        all_procs = []
-        for n in range(numProc):
-            p = Process(target=self._blast_worker, args=(input_q_for_blast, node_dict, name_dict))
-            all_procs.append(p)
-            p.start()
-
-        for p in all_procs:
-            p.join()
-
-        return
-
-    def _generate_taxa_designation_from_staxid_dicts(self,
-            taxdump_dir='/home/humebc/phylogeneticSoftware/ncbi-blast-2.6.0+/ntdbdownload/taxdump'):
-        # read in the .nodes file. This file tells us which tax level the node is and which node is the parent level
-        with open('{}/nodes.dmp'.format(taxdump_dir), 'r') as f:
-            node_file = [line.rstrip() for line in f]
-        # now make a dict from this where key is the tax id and the value is a tup where 0 = parent 1 = tax level
-        node_dict = {line.split('\t|\t')[0]: (line.split('\t|\t')[1], line.split('\t|\t')[2]) for line in node_file}
-
-        # next read in the names file. This file hold the name of the node.
-        with open('{}/names.dmp'.format(taxdump_dir), 'r') as f:
-            name_file = [line.rstrip() for line in f]
-
-        # now make a dict from the names file where the key is the staxid and the value is the name
-        name_dict = {line.split('\t|\t')[0]: line.split('\t|\t')[1] for line in name_file if
-                     line.split('\t|\t')[3].replace('\t|', '') == 'scientific name'}
-
-        return node_dict, name_dict
-
-    def _get_taxa_designation_from_staxid(self, staxid, tax_level_list, node_dict=None, name_dict=None,
-                                         taxdump_dir='/home/humebc/phylogeneticSoftware/ncbi-blast-2.6.0+/ntdbdownload/taxdump'):
-        # I have set this up so that you can either feed in the already made node_dict and name_dict or
-        # you they can be generated by this method. If you are running this method many times it will make
-        # sense to run the above generate_taxa_designation_from_staxid_dicts methods
-        # to generate the dicts to feed into this
-        # This will take in a list as its argument and find the levels that are listed in the list
-        list_to_return = [False for i in tax_level_list]
-        if node_dict == None or name_dict == None:
+            # generate the dictionaries used for taxa_designation
+            # send a copy to each of the processes
             node_dict, name_dict = self._generate_taxa_designation_from_staxid_dicts()
 
-        # now we can do the searching
-        # go through staxid nodes until we get to the tax_level required
-        # then grab the name
-        current_staxid = staxid
-        while True:
-            if current_staxid == '1':
-                return list_to_return
+            all_procs = []
+            for n in range(numProc):
+                p = Process(target=self._blast_worker, args=(input_q_for_blast, node_dict, name_dict))
+                all_procs.append(p)
+                p.start()
 
-            current_tax_level = node_dict[current_staxid][1]
+            for p in all_procs:
+                p.join()
 
-            if current_tax_level in tax_level_list:
-                # then this is the taxonomic level we want, grab the name and return
-                list_to_return[tax_level_list.index(current_tax_level)] = name_dict[current_staxid]
-                if False not in list_to_return:
-                    # then we have found all of the taxa_levels
+            return
+
+        def _generate_taxa_designation_from_staxid_dicts(self,
+                taxdump_dir='/home/humebc/phylogeneticSoftware/ncbi-blast-2.6.0+/ntdbdownload/taxdump'):
+            # read in the .nodes file. This file tells us which tax level the node is and which node is the parent level
+            with open('{}/nodes.dmp'.format(taxdump_dir), 'r') as f:
+                node_file = [line.rstrip() for line in f]
+            # now make a dict from this where key is the tax id and the value is a tup where 0 = parent 1 = tax level
+            node_dict = {line.split('\t|\t')[0]: (line.split('\t|\t')[1], line.split('\t|\t')[2]) for line in node_file}
+
+            # next read in the names file. This file hold the name of the node.
+            with open('{}/names.dmp'.format(taxdump_dir), 'r') as f:
+                name_file = [line.rstrip() for line in f]
+
+            # now make a dict from the names file where the key is the staxid and the value is the name
+            name_dict = {line.split('\t|\t')[0]: line.split('\t|\t')[1] for line in name_file if
+                         line.split('\t|\t')[3].replace('\t|', '') == 'scientific name'}
+
+            return node_dict, name_dict
+
+        def _get_taxa_designation_from_staxid(self, staxid, tax_level_list, node_dict=None, name_dict=None,
+                                             taxdump_dir='/home/humebc/phylogeneticSoftware/ncbi-blast-2.6.0+/ntdbdownload/taxdump'):
+            # I have set this up so that you can either feed in the already made node_dict and name_dict or
+            # you they can be generated by this method. If you are running this method many times it will make
+            # sense to run the above generate_taxa_designation_from_staxid_dicts methods
+            # to generate the dicts to feed into this
+            # This will take in a list as its argument and find the levels that are listed in the list
+            list_to_return = [False for i in tax_level_list]
+            if node_dict == None or name_dict == None:
+                node_dict, name_dict = self._generate_taxa_designation_from_staxid_dicts()
+
+            # now we can do the searching
+            # go through staxid nodes until we get to the tax_level required
+            # then grab the name
+            current_staxid = staxid
+            while True:
+                if current_staxid == '1':
                     return list_to_return
-                else:
-                    # else we have not and we should continue the procession through the tax ids
 
+                current_tax_level = node_dict[current_staxid][1]
+
+                if current_tax_level in tax_level_list:
+                    # then this is the taxonomic level we want, grab the name and return
+                    list_to_return[tax_level_list.index(current_tax_level)] = name_dict[current_staxid]
+                    if False not in list_to_return:
+                        # then we have found all of the taxa_levels
+                        return list_to_return
+                    else:
+                        # else we have not and we should continue the procession through the tax ids
+
+                        current_staxid = node_dict[current_staxid][0]
+
+                else:
                     current_staxid = node_dict[current_staxid][0]
 
-            else:
-                current_staxid = node_dict[current_staxid][0]
+        def _blast_worker(self, input_q, node_dict, name_dict):
+            # this is the mp worker. We will aim to go to each of the directories and perform a blast and
+            # and produce a dictionary that will be sequence id to taxonomic designation
 
-    def _blast_worker(self, input_q, node_dict, name_dict):
-        # this is the mp worker. We will aim to go to each of the directories and perform a blast and
-        # and produce a dictionary that will be sequence id to taxonomic designation
+            for path in iter(input_q.get, 'STOP'):
+                sys.stdout.write('\nSample {}\n'.format(path.split('/')[-1]))
 
-        for path in iter(input_q.get, 'STOP'):
-            sys.stdout.write('\nSample {}\n'.format(path.split('/')[-1]))
+                sample_dir = '/'.join(path.split('/')[:-1])
+                # we only need to be doing this sample if it hasn't already been done.
+                if os.path.isfile('{}/sample_tax_dict.pickle'.format(sample_dir)) and os.path.isfile(
+                        '{}/coral_dict.pickle'.format(sample_dir)) and os.path.isfile(
+                        '{}/symbiodiniaceae_dict.pickle'.format(sample_dir)):
+                    continue
 
-            sample_dir = '/'.join(path.split('/')[:-1])
-            # we only need to be doing this sample if it hasn't already been done.
-            if os.path.isfile('{}/sample_tax_dict.pickle'.format(sample_dir)) and os.path.isfile(
-                    '{}/coral_dict.pickle'.format(sample_dir)) and os.path.isfile(
-                    '{}/symbiodiniaceae_dict.pickle'.format(sample_dir)):
-                continue
+                # write out the screened fasta so that it can be read in to the blast
+                # make sure to reference the sequence support and the iteration
+                input_fasta_path = '{}/stability.trim.contigs.good.unique.abund.pcr.fasta'.format(sample_dir)
 
-            # write out the screened fasta so that it can be read in to the blast
-            # make sure to reference the sequence support and the iteration
-            input_fasta_path = '{}/stability.trim.contigs.good.unique.abund.pcr.fasta'.format(sample_dir)
+                # Set up environment for running local blast
+                blastOutputPath = '{}/blast.out'.format(sample_dir)
+                outputFmt = "6 qseqid sseqid staxids evalue pident qcovs staxid stitle ssciname"
 
-            # Set up environment for running local blast
-            blastOutputPath = '{}/blast.out'.format(sample_dir)
-            outputFmt = "6 qseqid sseqid staxids evalue pident qcovs staxid stitle ssciname"
-
-            # no need to run blast if it has already been run and results have been pickled out
-            if os.path.isfile('{}.pickle'.format(blastOutputPath)):
-                blast_output_file = pickle.load(open('{}.pickle'.format(blastOutputPath), 'rb'))
-            else:
-                # Run local blast
-                subprocess.run(
-                    ['blastn', '-out', blastOutputPath, '-outfmt', outputFmt, '-query', input_fasta_path, '-db', 'nt',
-                     '-max_target_seqs', '10', '-num_threads', '20'])
-
-                # Read in blast output
-                with open(blastOutputPath, 'r') as f:
-                    blast_output_file = [line.rstrip() for line in f]
-
-                # pickle out the blast results here to possibly save us time in the future
-                pickle.dump(blast_output_file, open('{}.pickle'.format(blastOutputPath), 'wb'))
-
-            # now create a dict that is the list of 10 results for linked to a key of the sample name
-            blast_output_dict = defaultdict(list)
-            for output_line in blast_output_file:
-                components = output_line.split('\t')
-                blast_output_dict[components[0]].append(components)
-
-            # at this point we should have the blast output result read in
-            # we can now make the taxa dictionary
-            # this dict will hold the taxa for all samples
-            sample_tax_dict = {}
-            # this dict will hold the matches for a subset which are the coral samples
-            coral_dict = {}
-            # this dict will hold the matches for a subset which are the symbiodiniaceae samples
-            symbiodiniaceae_dict = {}
-            for blast_key, comp_list_list in blast_output_dict.items():
-                sys.stdout.write('\rsequence {}'.format(blast_key))
-                symbiodiniaceae_count = 0
-                symbiodiniaceae_genus_dict = defaultdict(int)
-                coral_count = 0
-                # a dictionary that will keep track of which genus was the most abundant within the scleractinians
-                coral_genus_dict = defaultdict(int)
-                other_genus_count_dict = defaultdict(int)
-                for comp_list in comp_list_list:
-
-                    # first check to see if the family is Symbiodiniacea
-                    try:
-                        genus_level, family_level, order_level = self._get_taxa_designation_from_staxid(
-                            staxid=comp_list[6], tax_level_list=['genus', 'family', 'order'],
-                            node_dict=node_dict, name_dict=name_dict)
-                    except:
-                        # there are some tax_ids that we don't seem to be able to find
-                        # for the time being we will just continue over this seqeunce
-                        continue
-                    if False in [genus_level, family_level, order_level]:
-                        continue
-
-                    if family_level == 'Symbiodiniaceae':
-                        symbiodiniaceae_count += 1
-                        symbiodiniaceae_genus_dict[genus_level] += 1
-
-                    elif order_level == 'Scleractinia' or order_level == 'Anthoathecata':
-                        # check to see if we have a coral here and if we do, sore the genus
-                        coral_count += 1
-                        coral_genus_dict[genus_level] += 1
-                    else:
-                        # if this is not coral and not symbiodinium then we populate the orther_genus_count_dict
-                        other_genus_count_dict[genus_level] += 1
-
-                # here we have been through each of the 10 hits for the sample and we should populate the
-                # sample_tax_dict and the other dicts if the sample is either coral or Symbiodinium
-                # see which is the biggest the Sym count or the scler or the other
-                # first check to see if there were some annotations found
-
-                if len(other_genus_count_dict.items()) > 0:
-                    max_other_taxa_count = max(other_genus_count_dict.values())
+                # no need to run blast if it has already been run and results have been pickled out
+                if os.path.isfile('{}.pickle'.format(blastOutputPath)):
+                    blast_output_file = pickle.load(open('{}.pickle'.format(blastOutputPath), 'rb'))
                 else:
-                    max_other_taxa_count = 0
-                    if coral_count == 0 and symbiodiniaceae_count == 0:
-                        # then we have had no valid annotations for this seqeunce
-                        continue
-                if max_other_taxa_count > max(coral_count, symbiodiniaceae_count):
-                    # then this is a not one of the subsets
-                    sample_tax_dict[blast_key] = \
-                    [a[0] for a in sorted(other_genus_count_dict.items(), key=lambda x: x[1], reverse=True)][0]
-                elif coral_count > max(max_other_taxa_count, symbiodiniaceae_count):
-                    # then this is a scleratinian and we should store the order
-                    sample_tax_dict[blast_key] = 'Scleractinia'
-                    # for the scleractinian dictionary we should associate to the most abundant genus
-                    most_abundant_genus_sclerac = \
-                    [a[0] for a in sorted(coral_genus_dict.items(), key=lambda x: x[1], reverse=True)][0]
-                    coral_dict[blast_key] = most_abundant_genus_sclerac
-                elif symbiodiniaceae_count > max(max_other_taxa_count, coral_count):
-                    # then this is a Symbiodiniaceae and we should store the genus in the specific dictionary
-                    sample_tax_dict[blast_key] = 'Symbiodiniaceae'
-                    # for the symbiodiniaceae dictinary we should associate to the most abundant genus
-                    most_abundant_genus_symbiodin = \
-                        [a[0] for a in sorted(symbiodiniaceae_genus_dict.items(), key=lambda x: x[1], reverse=True)][0]
-                    symbiodiniaceae_dict[blast_key] = most_abundant_genus_symbiodin
-            # here we have populated the taxonomy dictionaries for the sample in question
-            # we can now pickle out the dictionaries
-            pickle.dump(sample_tax_dict, open('{}/sample_tax_dict.pickle'.format(sample_dir), 'wb'))
-            pickle.dump(coral_dict, open('{}/coral_dict.pickle'.format(sample_dir), 'wb'))
-            pickle.dump(symbiodiniaceae_dict, open('{}/symbiodiniaceae_dict.pickle'.format(sample_dir), 'wb'))
+                    # Run local blast
+                    subprocess.run(
+                        ['blastn', '-out', blastOutputPath, '-outfmt', outputFmt, '-query', input_fasta_path, '-db', 'nt',
+                         '-max_target_seqs', '10', '-num_threads', '20'])
 
-    def plot_seq_stacked_bar_plots(self, plot_type):
-        """This method produced stacked bar charts. It can produce different charts depending on the plot_type.
-                'full' means all of the sequences including the maj
-                'low' means without the maj
-                'med' means without the maj and having been through med
-                'qc_taxa_rel_abund' means plot the relative abundance of the post qc taxa categories
-                'qc_absolute means' plot the absolute abundance of the post-qc sequences (all tax categories)"""
-        seq_stacked_bar_plotter = self.SeqStackedBarPlotter(plot_type=plot_type, parent=self)
+                    # Read in blast output
+                    with open(blastOutputPath, 'r') as f:
+                        blast_output_file = [line.rstrip() for line in f]
 
-        seq_stacked_bar_plotter.plot()
+                    # pickle out the blast results here to possibly save us time in the future
+                    pickle.dump(blast_output_file, open('{}.pickle'.format(blastOutputPath), 'wb'))
+
+                # now create a dict that is the list of 10 results for linked to a key of the sample name
+                blast_output_dict = defaultdict(list)
+                for output_line in blast_output_file:
+                    components = output_line.split('\t')
+                    blast_output_dict[components[0]].append(components)
+
+                # at this point we should have the blast output result read in
+                # we can now make the taxa dictionary
+                # this dict will hold the taxa for all samples
+                sample_tax_dict = {}
+                # this dict will hold the matches for a subset which are the coral samples
+                coral_dict = {}
+                # this dict will hold the matches for a subset which are the symbiodiniaceae samples
+                symbiodiniaceae_dict = {}
+                for blast_key, comp_list_list in blast_output_dict.items():
+                    sys.stdout.write('\rsequence {}'.format(blast_key))
+                    symbiodiniaceae_count = 0
+                    symbiodiniaceae_genus_dict = defaultdict(int)
+                    coral_count = 0
+                    # a dictionary that will keep track of which genus was the most abundant within the scleractinians
+                    coral_genus_dict = defaultdict(int)
+                    other_genus_count_dict = defaultdict(int)
+                    for comp_list in comp_list_list:
+
+                        # first check to see if the family is Symbiodiniacea
+                        try:
+                            genus_level, family_level, order_level = self._get_taxa_designation_from_staxid(
+                                staxid=comp_list[6], tax_level_list=['genus', 'family', 'order'],
+                                node_dict=node_dict, name_dict=name_dict)
+                        except:
+                            # there are some tax_ids that we don't seem to be able to find
+                            # for the time being we will just continue over this seqeunce
+                            continue
+                        if False in [genus_level, family_level, order_level]:
+                            continue
+
+                        if family_level == 'Symbiodiniaceae':
+                            symbiodiniaceae_count += 1
+                            symbiodiniaceae_genus_dict[genus_level] += 1
+
+                        elif order_level == 'Scleractinia' or order_level == 'Anthoathecata':
+                            # check to see if we have a coral here and if we do, sore the genus
+                            coral_count += 1
+                            coral_genus_dict[genus_level] += 1
+                        else:
+                            # if this is not coral and not symbiodinium then we populate the orther_genus_count_dict
+                            other_genus_count_dict[genus_level] += 1
+
+                    # here we have been through each of the 10 hits for the sample and we should populate the
+                    # sample_tax_dict and the other dicts if the sample is either coral or Symbiodinium
+                    # see which is the biggest the Sym count or the scler or the other
+                    # first check to see if there were some annotations found
+
+                    if len(other_genus_count_dict.items()) > 0:
+                        max_other_taxa_count = max(other_genus_count_dict.values())
+                    else:
+                        max_other_taxa_count = 0
+                        if coral_count == 0 and symbiodiniaceae_count == 0:
+                            # then we have had no valid annotations for this seqeunce
+                            continue
+                    if max_other_taxa_count > max(coral_count, symbiodiniaceae_count):
+                        # then this is a not one of the subsets
+                        sample_tax_dict[blast_key] = \
+                        [a[0] for a in sorted(other_genus_count_dict.items(), key=lambda x: x[1], reverse=True)][0]
+                    elif coral_count > max(max_other_taxa_count, symbiodiniaceae_count):
+                        # then this is a scleratinian and we should store the order
+                        sample_tax_dict[blast_key] = 'Scleractinia'
+                        # for the scleractinian dictionary we should associate to the most abundant genus
+                        most_abundant_genus_sclerac = \
+                        [a[0] for a in sorted(coral_genus_dict.items(), key=lambda x: x[1], reverse=True)][0]
+                        coral_dict[blast_key] = most_abundant_genus_sclerac
+                    elif symbiodiniaceae_count > max(max_other_taxa_count, coral_count):
+                        # then this is a Symbiodiniaceae and we should store the genus in the specific dictionary
+                        sample_tax_dict[blast_key] = 'Symbiodiniaceae'
+                        # for the symbiodiniaceae dictinary we should associate to the most abundant genus
+                        most_abundant_genus_symbiodin = \
+                            [a[0] for a in sorted(symbiodiniaceae_genus_dict.items(), key=lambda x: x[1], reverse=True)][0]
+                        symbiodiniaceae_dict[blast_key] = most_abundant_genus_symbiodin
+                # here we have populated the taxonomy dictionaries for the sample in question
+                # we can now pickle out the dictionaries
+                pickle.dump(sample_tax_dict, open('{}/sample_tax_dict.pickle'.format(sample_dir), 'wb'))
+                pickle.dump(coral_dict, open('{}/coral_dict.pickle'.format(sample_dir), 'wb'))
+                pickle.dump(symbiodiniaceae_dict, open('{}/symbiodiniaceae_dict.pickle'.format(sample_dir), 'wb'))
 
     class SeqStackedBarPlotter(GenericPlottingMethods):
         """This method produced stacked bar charts. It can produce different charts depending on the plot_type.
@@ -1506,6 +1491,7 @@ class EighteenSAnalysis:
                 for (dirpath, dirnames, filenames) in os.walk(sample_dir):
                     listOfFiles.extend(filenames)
                     break
+                pathToFile = None
                 for file in listOfFiles:
                     if 'PADDED' in file:
                         pathToFile = '{}/{}'.format(sample_dir, file)
@@ -1634,7 +1620,6 @@ class EighteenSAnalysis:
                             open('{}/sample_tax_category_dict.pickle'.format(sample_dir), 'wb'))
 
         def _plot_data_axes_18s(self, minor_DIV=False, qc=False):
-
             ax_count = 0
             for site in ['SITE01', 'SITE02', 'SITE03']:
                 for location in ['ISLAND06', 'ISLAND10', 'ISLAND15']:
@@ -1736,7 +1721,7 @@ class EighteenSAnalysis:
                     ax.spines['right'].set_visible(False)
 
             else:
-                self.parent._remove_axes_but_allow_labels(ax, x_tick_label_list)
+                self._remove_axes_but_allow_labels(ax, x_tick_label_list)
 
             # as well as getting rid of the top and right axis splines
             # I'd also like to restrict the bottom spine to where there are samples plotted but also
@@ -2146,6 +2131,112 @@ class EighteenSAnalysis:
                 # here we have the samples abundance dictionary populated. Now pickle out
                 pickle.dump(normalised_sample_dict, open(os.path.join(sample_dir, 'seq_abund_dict.pickle'), 'wb'))
 
+    class SequenceQC():
+        """Mothur qc of the sequences"""
+
+        def __init__(self, parent):
+            self.parent = parent
+
+        def do_seq_qc(self, numProc=20):
+            """this function will be responsible for creating the processed name and fasta pairs from the fastq files
+            # that can be found in the info df
+            """
+
+            # lets make an iput queue that is going to be each of the samples
+            mothur_qc_input_queue = Queue()
+
+            # for each sample in the info_df I will add a tuple that is a pair of the fwd and rev directories to the fastq.gz
+            for ind in self.parent.all_samples_info_df.index.values.tolist():
+                mothur_qc_input_queue.put(
+                    (self.parent.all_samples_info_df.loc[ind, 'fastq_fwd_file_path'],
+                     self.parent.all_samples_info_df.loc[ind, 'fastq_rev_file_path']))
+
+            for n in range(numProc):
+                mothur_qc_input_queue.put('STOP')
+
+            all_procs = []
+            for n in range(numProc):
+                p = Process(target=self._mothur_worker, args=(mothur_qc_input_queue,))
+                all_procs.append(p)
+                p.start()
+
+            for p in all_procs:
+                p.join()
+
+            return
+
+        def _mothur_worker(self, input_q):
+
+            for path_tup in iter(input_q.get, 'STOP'):
+
+                sample_dir = '/'.join(path_tup[0].split('/')[:-1])
+
+                # the 18S V9 region primers
+                primerFwdSeq = 'TTGTACACACCGCCC'  # Written 5'-->3'
+                primerRevSeq = 'CCTTCYGCAGGTTCACCTAC'  # Written 5'-->3'
+
+                oligoFile = [
+                    r'#1389F',
+                    'forward\t{0}'.format(primerFwdSeq),
+                    r'#1510R',
+                    'reverse\t{0}'.format(primerRevSeq)
+                ]
+
+                oligo_file_path = '{}/primers.oligos'.format(sample_dir)
+
+                stability_file = ['{}\t{}'.format(path_tup[0], path_tup[1])]
+                stability_file_path = '{}/stability.files'.format(sample_dir)
+                root_name = 'stability'
+
+                # write out stability file
+                with open(stability_file_path, 'w') as f:
+                    for line in stability_file:
+                        f.write('{}\n'.format(line))
+
+                # write out oligo file
+                with open(oligo_file_path, 'w') as f:
+                    for line in oligoFile:
+                        f.write('{}\n'.format(line))
+
+                # here we have the stability file written out and the oligo file
+
+                # The mothur batch file that will be run by mothur.
+                # todo if you find yourself reusing this you should add in a final unique.seqs at the end
+                mBatchFile = [
+                    r'set.dir(input={0})'.format(sample_dir),
+                    r'set.dir(output={0})'.format(sample_dir),
+                    r'make.contigs(file={}, processors=20)'.format(stability_file_path),
+                    r'summary.seqs(fasta={}/{}.trim.contigs.fasta)'.format(sample_dir, root_name),
+                    r'screen.seqs(fasta={0}/{1}.trim.contigs.fasta, maxambig=0, maxhomop=5)'.format(
+                        sample_dir, root_name),
+                    r'summary.seqs(fasta={0}/{1}.trim.contigs.good.fasta)'.format(sample_dir, root_name),
+                    r'unique.seqs(fasta={0}/{1}.trim.contigs.good.fasta)'.format(sample_dir, root_name),
+                    r'summary.seqs(fasta={0}/{1}.trim.contigs.good.unique.fasta, name={0}/{1}.trim.contigs.good.names)'.format(
+                        sample_dir, root_name),
+                    r'split.abund(cutoff=2, fasta={0}/{1}.trim.contigs.good.unique.fasta, name={0}/{1}.trim.contigs.good.names)'.format(
+                        sample_dir, root_name),
+                    r'summary.seqs(fasta={0}/{1}.trim.contigs.good.unique.abund.fasta, name={0}/{1}.trim.contigs.good.abund.names)'.format(
+                        sample_dir, root_name),
+                    r'summary.seqs(fasta={0}/{1}.trim.contigs.good.unique.rare.fasta, name={0}/{1}.trim.contigs.good.rare.names)'.format(
+                        sample_dir, root_name),
+                    r'pcr.seqs(fasta={0}/{1}.trim.contigs.good.unique.abund.fasta, name={0}/{1}.trim.contigs.good.abund.names, oligos={0}/primers.oligos, pdiffs=2, rdiffs=2)'.format(
+                        sample_dir, root_name)
+                ]
+
+                mBatchFile_path = '{}/mBatchFile'.format(sample_dir)
+
+                # write out batch file
+                with open(mBatchFile_path, 'w') as f:
+                    for line in mBatchFile:
+                        f.write('{}\n'.format(line))
+
+                # run the mothur processing
+                # subprocess.run(['mothur', r'{0}'.format(mBatchFile_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                subprocess.run(['mothur', r'{0}'.format(mBatchFile_path)])
+
+                sys.stdout.write('mothur complete for {}'.format(sample_dir))
+
+
     def _generate_info_df_for_samples(self):
         """Generate two dataframes, the first that contains information from all samples
         The second will contain information from only the coral samples and will be used in the plotting.
@@ -2171,105 +2262,7 @@ class EighteenSAnalysis:
             pickle.dump(self.coral_info_df_for_figures,
                         open(os.path.join(self.cache_dir, 'coral_info_df_for_figures.p'), 'wb'))
 
-    def do_seq_qc(self, numProc=20):
-        """this function will be responsible for creating the processed name and fasta pairs from the fastq files
-        # that can be found in the info df
-        """
 
-        # lets make an iput queue that is going to be each of the samples
-        mothur_qc_input_queue = Queue()
-
-        # for each sample in the info_df I will add a tuple that is a pair of the fwd and rev directories to the fastq.gz
-        for ind in self.all_samples_info_df.index.values.tolist():
-            mothur_qc_input_queue.put(
-                (self.all_samples_info_df.loc[ind, 'fastq_fwd_file_path'], self.all_samples_info_df.loc[ind, 'fastq_rev_file_path']))
-
-        for n in range(numProc):
-            mothur_qc_input_queue.put('STOP')
-
-        all_procs = []
-        for n in range(numProc):
-            p = Process(target=self._mothur_worker, args=(mothur_qc_input_queue,))
-            all_procs.append(p)
-            p.start()
-
-        for p in all_procs:
-            p.join()
-
-        return
-
-    def _mothur_worker(self, input_q):
-
-        for path_tup in iter(input_q.get, 'STOP'):
-
-            sample_dir = '/'.join(path_tup[0].split('/')[:-1])
-
-            # the 18S V9 region primers
-            primerFwdSeq = 'TTGTACACACCGCCC'  # Written 5'-->3'
-            primerRevSeq = 'CCTTCYGCAGGTTCACCTAC'  # Written 5'-->3'
-
-            oligoFile = [
-                r'#1389F',
-                'forward\t{0}'.format(primerFwdSeq),
-                r'#1510R',
-                'reverse\t{0}'.format(primerRevSeq)
-            ]
-
-            oligo_file_path = '{}/primers.oligos'.format(sample_dir)
-
-            stability_file = ['{}\t{}'.format(path_tup[0], path_tup[1])]
-            stability_file_path = '{}/stability.files'.format(sample_dir)
-            root_name = 'stability'
-
-            # write out stability file
-            with open(stability_file_path, 'w') as f:
-                for line in stability_file:
-                    f.write('{}\n'.format(line))
-
-            # write out oligo file
-            with open(oligo_file_path, 'w') as f:
-                for line in oligoFile:
-                    f.write('{}\n'.format(line))
-
-            # here we have the stability file written out and the oligo file
-
-            # The mothur batch file that will be run by mothur.
-            # todo if you find yourself reusing this you should add in a final unique.seqs at the end
-            mBatchFile = [
-                r'set.dir(input={0})'.format(sample_dir),
-                r'set.dir(output={0})'.format(sample_dir),
-                r'make.contigs(file={}, processors=20)'.format(stability_file_path),
-                r'summary.seqs(fasta={}/{}.trim.contigs.fasta)'.format(sample_dir, root_name),
-                r'screen.seqs(fasta={0}/{1}.trim.contigs.fasta, maxambig=0, maxhomop=5)'.format(
-                    sample_dir, root_name),
-                r'summary.seqs(fasta={0}/{1}.trim.contigs.good.fasta)'.format(sample_dir, root_name),
-                r'unique.seqs(fasta={0}/{1}.trim.contigs.good.fasta)'.format(sample_dir, root_name),
-                r'summary.seqs(fasta={0}/{1}.trim.contigs.good.unique.fasta, name={0}/{1}.trim.contigs.good.names)'.format(
-                    sample_dir, root_name),
-                r'split.abund(cutoff=2, fasta={0}/{1}.trim.contigs.good.unique.fasta, name={0}/{1}.trim.contigs.good.names)'.format(
-                    sample_dir, root_name),
-                r'summary.seqs(fasta={0}/{1}.trim.contigs.good.unique.abund.fasta, name={0}/{1}.trim.contigs.good.abund.names)'.format(
-                    sample_dir, root_name),
-                r'summary.seqs(fasta={0}/{1}.trim.contigs.good.unique.rare.fasta, name={0}/{1}.trim.contigs.good.rare.names)'.format(
-                    sample_dir, root_name),
-                r'pcr.seqs(fasta={0}/{1}.trim.contigs.good.unique.abund.fasta, name={0}/{1}.trim.contigs.good.abund.names, oligos={0}/primers.oligos, pdiffs=2, rdiffs=2)'.format(
-                    sample_dir, root_name)
-            ]
-
-            mBatchFile_path = '{}/mBatchFile'.format(sample_dir)
-
-            # write out batch file
-            with open(mBatchFile_path, 'w') as f:
-                for line in mBatchFile:
-                    f.write('{}\n'.format(line))
-
-            # run the mothur processing
-            # subprocess.run(['mothur', r'{0}'.format(mBatchFile_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            subprocess.run(['mothur', r'{0}'.format(mBatchFile_path)])
-
-            sys.stdout.write('mothur complete for {}'.format(sample_dir))
-
-        return
 
     def _generate_coral_info_df_for_figures_from_all_sample_info_df(self):
         if os.path.isfile(os.path.join(self.cache_dir, 'coral_info_df_for_figures.p')):
@@ -2513,172 +2506,206 @@ class EighteenSAnalysis:
             for un_file in un_files:
                 subprocess.run(['gzip', '{}/{}'.format(self.current_dir, un_file)])
 
-    # class NetworkStuff:
-    #     """
-    #     # TODO this is still work in progress. I have just shoved all of the methods that were related to this
-    #     in progress work in to this class as a holder. It still needs to be properly refactored.
-    #     I want to make splits tree networks of the 18s sequences. To do this i will need to get the seuqences in better
-    #     shape so that I can align them. Currently they are of very different lengths. I will go back into each of the
-    #     sample folders and I will align the latest fasta file and then do cropping using 90% cutoff or something.
-    #     this means that I will get rid of gaps at the beginning and end of the alignment if the column position has gaps for
-    #     90% of the sequences.
-    #     On these cropped sequences I will then re-unique and then finally realign the sequences. These sequences will then
-    #     be ready for making networks from. It may also be a good idea to work with these sequences for all of the work we have
-    #     done up until now.
-    #
-    #     """
-    #     def __init__(self, parent):
-    #         self.parent = parent
-    #
-    #     def prepare_sequences_for_networking(self):
-    #
-    #         # for each coral sample do the alignment and cropping and re-alignment of sequences first
-    #         for ind in self.parent.coral_info_df_for_figures.index.values.tolist():
-    #             sample_dir = self.parent.coral_info_df_for_figures.loc[ind, 'sample_dir']
-    #
-    #             if os.path.isfile('{}/coral_aligned_fasta_for_networks.fasta'.format(sample_dir)) and os.path.isfile(
-    #                     '{}/coral_fasta_aligned_and_cropped.names'.format(sample_dir)):
-    #                 # then this sample has already been completed
-    #                 continue
-    #
-    #             print('Processing {}'.format(ind))
-    #             sample_genus = self.parent.coral_info_df_for_figures.loc[ind, 'genus']
-    #
-    #             current_fasta_file_path = '{}/stability.trim.contigs.good.unique.abund.pcr.fasta'.format(sample_dir)
-    #             with open(current_fasta_file_path, 'r') as f:
-    #                 current_fasta_file = [line.rstrip() for line in f]
-    #             current_fasta_dict = {current_fasta_file[i][1:].split('\t')[0]: current_fasta_file[i + 1] for i in
-    #                                   range(0, len(current_fasta_file), 2)}
-    #
-    #             current_names_file_path = '{}/stability.trim.contigs.good.abund.pcr.names'.format(sample_dir)
-    #             with open(current_names_file_path, 'r') as f:
-    #                 current_names_file = [line.rstrip() for line in f]
-    #             current_names_dict = {line.split('\t')[0]: line for line in current_names_file}
-    #
-    #             # this fasta currently contains all of the sequences including non-genus specific seqs
-    #             # we are only interested in the genus specific seqs so lets pull these out using the
-    #             # coral_dict.pickle file
-    #             coral_seq_dict = pickle.load(open('{}/coral_dict.pickle'.format(sample_dir), 'rb'))
-    #
-    #             fasta_for_alignment = []
-    #             names_for_alignment = []
-    #             for seq_key, coral_genus in coral_seq_dict.items():
-    #                 if coral_genus.upper() == sample_genus.upper():
-    #                     fasta_for_alignment.extend(['>{}'.format(seq_key), current_fasta_dict[seq_key]])
-    #                     names_for_alignment.append(current_names_dict[seq_key])
-    #
-    #             # here we have a fasta file and a names file pair that are just the coral genus in question.
-    #             # we should now write these out and then align them. Then do the cropping
-    #             path_to_fasta_file_to_align = '{}/coral_fasta_to_align_and_crop.fasta'.format(sample_dir)
-    #             path_to_names_file_to_align = '{}/coral_names.names'.format(sample_dir)
-    #
-    #             # write out the fasta
-    #             with open(path_to_fasta_file_to_align, 'w') as f:
-    #                 for line in fasta_for_alignment:
-    #                     f.write('{}\n'.format(line))
-    #
-    #             # write out the .names file
-    #             with open(path_to_names_file_to_align, 'w') as f:
-    #                 for line in names_for_alignment:
-    #                     f.write('{}\n'.format(line))
-    #
-    #             aligned_fasta_path = '{}/coral_fasta_aligned_to_crop.fasta'.format(sample_dir)
-    #
-    #             self.align_fasta(input_fasta_path=path_to_fasta_file_to_align, output_fasta_path=aligned_fasta_path)
-    #
-    #             # this method takes an input path and an output path
-    #             path_to_fasta_cropped = '{}/coral_fasta_aligned_and_cropped.fasta'.format(sample_dir)
-    #
-    #             # at this point we have the original fasta aligned and cropped.
-    #             cropping.crop_fasta(input_path=aligned_fasta_path, output_path=path_to_fasta_cropped, cutoff=0.9)
-    #
-    #             # we now need to remove the gaps from the sequences else we end up with a strange '.' character in our fasta
-    #             # file after the seqs.unique
-    #             # read in the aligned fasta file
-    #
-    #             self.remove_gaps_from_alignment(input_fasta_alignment_path=path_to_fasta_cropped)
-    #
-    #             # now we re run mothur to do a unique on the fasta a names pair
-    #             mBatchFile = [
-    #                 r'set.dir(input={})'.format(sample_dir),
-    #                 r'set.dir(output={})'.format(sample_dir),
-    #                 r'unique.seqs(fasta={}, name={})'.format(path_to_fasta_cropped, path_to_names_file_to_align),
-    #                 r'summary.seqs(fasta={0}/coral_fasta_aligned_and_cropped.unique.fasta, name={0}/coral_fasta_aligned_and_cropped.names)'.format(
-    #                     sample_dir)
-    #             ]
-    #
-    #             mBatchFile_path = '{}/mBatchFile_two'.format(sample_dir)
-    #
-    #             # write out batch file
-    #             with open(mBatchFile_path, 'w') as f:
-    #                 for line in mBatchFile:
-    #                     f.write('{}\n'.format(line))
-    #
-    #             # run the mothur processing
-    #             # subprocess.run(['mothur', r'{0}'.format(mBatchFile_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    #             subprocess.run(['mothur', r'{}'.format(mBatchFile_path)])
-    #
-    #             # at this point we should have a new .fasta file and a new .names file
-    #             # we will then want to align these
-    #             # this seems to have worked really well. We are down to 149 sequences
-    #
-    #             # now we need to re-align these sequencs to get an alignment to work with
-    #             input_fasta_for_alignment = '{}/coral_fasta_aligned_and_cropped.unique.fasta'.format(sample_dir)
-    #             output_fasta_aligned = '{}/coral_aligned_fasta_for_networks.fasta'.format(sample_dir)
-    #             self.align_fasta(input_fasta_path=input_fasta_for_alignment, output_fasta_path=output_fasta_aligned)
-    #             # at this point we have the .names file which is coral_fasta_aligned_and_cropped.names and the aligned
-    #             # fasta that is coral_aligned_fasta_for_networks.fasta
-    #         apples = 'asdf'
-    #
-    #     def remove_gaps_from_alignment(self, input_fasta_alignment_path):
-    #         with open(input_fasta_alignment_path, 'r') as f:
-    #             fasta_to_remove_gaps = [line.rstrip() for line in f]
-    #         fasta_without_gaps = []
-    #         for i in range(len(fasta_to_remove_gaps)):
-    #             if i % 2 == 1:
-    #                 fasta_without_gaps.append(fasta_to_remove_gaps[i].replace('-', ''))
-    #             else:
-    #                 fasta_without_gaps.append(fasta_to_remove_gaps[i])
-    #         # now write out the fasta without gaps
-    #         with open(input_fasta_alignment_path, 'w') as f:
-    #             for line in fasta_without_gaps:
-    #                 f.write('{}\n'.format(line))
-    #
-    #     def align_fasta(self, input_fasta_path, output_fasta_path):
-    #         # now perform the alignment with MAFFT
-    #         mafft = local["mafft-linsi"]
-    #         out_file = input_fasta_path.replace('.fasta', '_aligned.fasta')
-    #         # now run mafft including the redirect
-    #         (mafft['--thread', -1, input_fasta_path] > out_file)()
-    #         # read in the interleaved aligned fasta
-    #         with open(out_file, 'r') as f:
-    #             aligned_fasta_interleaved = [line.rstrip() for line in f]
-    #         # make a serial fasta from the interleaved fasta
-    #         aligned_fasta = self.convert_interleaved_to_sequencial_fasta_two(aligned_fasta_interleaved)
-    #         # write out the fasta to be cropped
-    #         with open(output_fasta_path, 'w') as f:
-    #             for line in aligned_fasta:
-    #                 f.write('{}\n'.format(line))
-    #
-    #     def convert_interleaved_to_sequencial_fasta_two(self, fasta_in):
-    #         fasta_out = []
-    #         for i in range(len(fasta_in)):
-    #             if fasta_in[i].startswith('>'):
-    #                 if fasta_out:
-    #                     # if the fasta is not empty then this is not the first
-    #                     fasta_out.append(temp_seq_str)
-    #                 # else then this is the first sequence and there is no need to add the seq.
-    #                 temp_seq_str = ''
-    #                 fasta_out.append(fasta_in[i])
-    #             else:
-    #                 temp_seq_str = temp_seq_str + fasta_in[i]
-    #         # finally we need to add in the last sequence
-    #         fasta_out.append(temp_seq_str)
-    #         return fasta_out
+    class NetworkStuff:
+        """
+        # TODO this is still work in progress. I have just shoved all of the methods that were related to this
+        in progress work in to this class as a holder. It still needs to be properly refactored.
+        I want to make splits tree networks of the 18s sequences. To do this i will need to get the seuqences in better
+        shape so that I can align them. Currently they are of very different lengths. I will go back into each of the
+        sample folders and I will align the latest fasta file and then do cropping using 90% cutoff or something.
+        this means that I will get rid of gaps at the beginning and end of the alignment if the column position has gaps for
+        90% of the sequences.
+        On these cropped sequences I will then re-unique and then finally realign the sequences. These sequences will then
+        be ready for making networks from. It may also be a good idea to work with these sequences for all of the work we have
+        done up until now.
+
+        """
+        def __init__(self, parent):
+            self.parent = parent
+
+        def prepare_sequences_for_networking(self):
+
+            # for each coral sample do the alignment and cropping and re-alignment of sequences first
+            for ind in self.parent.coral_info_df_for_figures.index.values.tolist():
+                sample_dir = self.parent.coral_info_df_for_figures.loc[ind, 'sample_dir']
+
+                if os.path.isfile('{}/coral_aligned_fasta_for_networks.fasta'.format(sample_dir)) and os.path.isfile(
+                        '{}/coral_fasta_aligned_and_cropped.names'.format(sample_dir)):
+                    # then this sample has already been completed
+                    continue
+
+                print('Processing {}'.format(ind))
+                sample_genus = self.parent.coral_info_df_for_figures.loc[ind, 'genus']
+
+                current_fasta_file_path = '{}/stability.trim.contigs.good.unique.abund.pcr.fasta'.format(sample_dir)
+                with open(current_fasta_file_path, 'r') as f:
+                    current_fasta_file = [line.rstrip() for line in f]
+                current_fasta_dict = {current_fasta_file[i][1:].split('\t')[0]: current_fasta_file[i + 1] for i in
+                                      range(0, len(current_fasta_file), 2)}
+
+                current_names_file_path = '{}/stability.trim.contigs.good.abund.pcr.names'.format(sample_dir)
+                with open(current_names_file_path, 'r') as f:
+                    current_names_file = [line.rstrip() for line in f]
+                current_names_dict = {line.split('\t')[0]: line for line in current_names_file}
+
+                # this fasta currently contains all of the sequences including non-genus specific seqs
+                # we are only interested in the genus specific seqs so lets pull these out using the
+                # coral_dict.pickle file
+                coral_seq_dict = pickle.load(open('{}/coral_dict.pickle'.format(sample_dir), 'rb'))
+
+                fasta_for_alignment = []
+                names_for_alignment = []
+                for seq_key, coral_genus in coral_seq_dict.items():
+                    if coral_genus.upper() == sample_genus.upper():
+                        fasta_for_alignment.extend(['>{}'.format(seq_key), current_fasta_dict[seq_key]])
+                        names_for_alignment.append(current_names_dict[seq_key])
+
+                # here we have a fasta file and a names file pair that are just the coral genus in question.
+                # we should now write these out and then align them. Then do the cropping
+                path_to_fasta_file_to_align = '{}/coral_fasta_to_align_and_crop.fasta'.format(sample_dir)
+                path_to_names_file_to_align = '{}/coral_names.names'.format(sample_dir)
+
+                # write out the fasta
+                with open(path_to_fasta_file_to_align, 'w') as f:
+                    for line in fasta_for_alignment:
+                        f.write('{}\n'.format(line))
+
+                # write out the .names file
+                with open(path_to_names_file_to_align, 'w') as f:
+                    for line in names_for_alignment:
+                        f.write('{}\n'.format(line))
+
+                aligned_fasta_path = '{}/coral_fasta_aligned_to_crop.fasta'.format(sample_dir)
+
+                self.align_fasta(input_fasta_path=path_to_fasta_file_to_align, output_fasta_path=aligned_fasta_path)
+
+                # this method takes an input path and an output path
+                path_to_fasta_cropped = '{}/coral_fasta_aligned_and_cropped.fasta'.format(sample_dir)
+
+                # at this point we have the original fasta aligned and cropped.
+                cropping.crop_fasta(input_path=aligned_fasta_path, output_path=path_to_fasta_cropped, cutoff=0.9)
+
+                # we now need to remove the gaps from the sequences else we end up with a strange '.' character in our fasta
+                # file after the seqs.unique
+                # read in the aligned fasta file
+
+                self.remove_gaps_from_alignment(input_fasta_alignment_path=path_to_fasta_cropped)
+
+                # now we re run mothur to do a unique on the fasta a names pair
+                mBatchFile = [
+                    r'set.dir(input={})'.format(sample_dir),
+                    r'set.dir(output={})'.format(sample_dir),
+                    r'unique.seqs(fasta={}, name={})'.format(path_to_fasta_cropped, path_to_names_file_to_align),
+                    r'summary.seqs(fasta={0}/coral_fasta_aligned_and_cropped.unique.fasta, name={0}/coral_fasta_aligned_and_cropped.names)'.format(
+                        sample_dir)
+                ]
+
+                mBatchFile_path = '{}/mBatchFile_two'.format(sample_dir)
+
+                # write out batch file
+                with open(mBatchFile_path, 'w') as f:
+                    for line in mBatchFile:
+                        f.write('{}\n'.format(line))
+
+                # run the mothur processing
+                # subprocess.run(['mothur', r'{0}'.format(mBatchFile_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                subprocess.run(['mothur', r'{}'.format(mBatchFile_path)])
+
+                # at this point we should have a new .fasta file and a new .names file
+                # we will then want to align these
+                # this seems to have worked really well. We are down to 149 sequences
+
+                # now we need to re-align these sequencs to get an alignment to work with
+                input_fasta_for_alignment = '{}/coral_fasta_aligned_and_cropped.unique.fasta'.format(sample_dir)
+                output_fasta_aligned = '{}/coral_aligned_fasta_for_networks.fasta'.format(sample_dir)
+                self.align_fasta(input_fasta_path=input_fasta_for_alignment, output_fasta_path=output_fasta_aligned)
+                # at this point we have the .names file which is coral_fasta_aligned_and_cropped.names and the aligned
+                # fasta that is coral_aligned_fasta_for_networks.fasta
+            apples = 'asdf'
+
+        def remove_gaps_from_alignment(self, input_fasta_alignment_path):
+            with open(input_fasta_alignment_path, 'r') as f:
+                fasta_to_remove_gaps = [line.rstrip() for line in f]
+            fasta_without_gaps = []
+            for i in range(len(fasta_to_remove_gaps)):
+                if i % 2 == 1:
+                    fasta_without_gaps.append(fasta_to_remove_gaps[i].replace('-', ''))
+                else:
+                    fasta_without_gaps.append(fasta_to_remove_gaps[i])
+            # now write out the fasta without gaps
+            with open(input_fasta_alignment_path, 'w') as f:
+                for line in fasta_without_gaps:
+                    f.write('{}\n'.format(line))
+
+        def align_fasta(self, input_fasta_path, output_fasta_path):
+            # now perform the alignment with MAFFT
+            mafft = local["mafft-linsi"]
+            out_file = input_fasta_path.replace('.fasta', '_aligned.fasta')
+            # now run mafft including the redirect
+            (mafft['--thread', -1, input_fasta_path] > out_file)()
+            # read in the interleaved aligned fasta
+            with open(out_file, 'r') as f:
+                aligned_fasta_interleaved = [line.rstrip() for line in f]
+            # make a serial fasta from the interleaved fasta
+            aligned_fasta = self.convert_interleaved_to_sequencial_fasta_two(aligned_fasta_interleaved)
+            # write out the fasta to be cropped
+            with open(output_fasta_path, 'w') as f:
+                for line in aligned_fasta:
+                    f.write('{}\n'.format(line))
+
+        def convert_interleaved_to_sequencial_fasta_two(self, fasta_in):
+            fasta_out = []
+            for i in range(len(fasta_in)):
+                if fasta_in[i].startswith('>'):
+                    if fasta_out:
+                        # if the fasta is not empty then this is not the first
+                        fasta_out.append(temp_seq_str)
+                    # else then this is the first sequence and there is no need to add the seq.
+                    temp_seq_str = ''
+                    fasta_out.append(fasta_in[i])
+                else:
+                    temp_seq_str = temp_seq_str + fasta_in[i]
+            # finally we need to add in the last sequence
+            fasta_out.append(temp_seq_str)
+            return fasta_out
+
+
+def get_colour_list():
+    colour_list = ["#FFFF00", "#1CE6FF", "#FF34FF", "#FF4A46", "#008941", "#006FA6", "#A30059", "#FFDBE5",
+                  "#7A4900", "#0000A6", "#63FFAC", "#B79762", "#004D43", "#8FB0FF", "#997D87", "#5A0007", "#809693",
+                  "#FEFFE6", "#1B4400", "#4FC601", "#3B5DFF", "#4A3B53", "#FF2F80", "#61615A", "#BA0900", "#6B7900",
+                  "#00C2A0", "#FFAA92", "#FF90C9", "#B903AA", "#D16100", "#DDEFFF", "#000035", "#7B4F4B", "#A1C299",
+                  "#300018", "#0AA6D8", "#013349", "#00846F", "#372101", "#FFB500", "#C2FFED", "#A079BF", "#CC0744",
+                  "#C0B9B2", "#C2FF99", "#001E09", "#00489C", "#6F0062", "#0CBD66", "#EEC3FF", "#456D75", "#B77B68",
+                  "#7A87A1", "#788D66", "#885578", "#FAD09F", "#FF8A9A", "#D157A0", "#BEC459", "#456648", "#0086ED",
+                  "#886F4C", "#34362D", "#B4A8BD", "#00A6AA", "#452C2C", "#636375", "#A3C8C9", "#FF913F", "#938A81",
+                  "#575329", "#00FECF", "#B05B6F", "#8CD0FF", "#3B9700", "#04F757", "#C8A1A1", "#1E6E00", "#7900D7",
+                  "#A77500", "#6367A9", "#A05837", "#6B002C", "#772600", "#D790FF", "#9B9700", "#549E79", "#FFF69F",
+                  "#201625", "#72418F", "#BC23FF", "#99ADC0", "#3A2465", "#922329", "#5B4534", "#FDE8DC", "#404E55",
+                  "#0089A3", "#CB7E98", "#A4E804", "#324E72", "#6A3A4C", "#83AB58", "#001C1E", "#D1F7CE", "#004B28",
+                  "#C8D0F6", "#A3A489", "#806C66", "#222800", "#BF5650", "#E83000", "#66796D", "#DA007C", "#FF1A59",
+                  "#8ADBB4", "#1E0200", "#5B4E51", "#C895C5", "#320033", "#FF6832", "#66E1D3", "#CFCDAC", "#D0AC94",
+                  "#7ED379", "#012C58", "#7A7BFF", "#D68E01", "#353339", "#78AFA1", "#FEB2C6", "#75797C", "#837393",
+                  "#943A4D", "#B5F4FF", "#D2DCD5", "#9556BD", "#6A714A", "#001325", "#02525F", "#0AA3F7", "#E98176",
+                  "#DBD5DD", "#5EBCD1", "#3D4F44", "#7E6405", "#02684E", "#962B75", "#8D8546", "#9695C5", "#E773CE",
+                  "#D86A78", "#3E89BE", "#CA834E", "#518A87", "#5B113C", "#55813B", "#E704C4", "#00005F", "#A97399",
+                  "#4B8160", "#59738A", "#FF5DA7", "#F7C9BF", "#643127", "#513A01", "#6B94AA", "#51A058", "#A45B02",
+                  "#1D1702", "#E20027", "#E7AB63", "#4C6001", "#9C6966", "#64547B", "#97979E", "#006A66", "#391406",
+                  "#F4D749", "#0045D2", "#006C31", "#DDB6D0", "#7C6571", "#9FB2A4", "#00D891", "#15A08A", "#BC65E9",
+                  "#FFFFFE", "#C6DC99", "#203B3C", "#671190", "#6B3A64", "#F5E1FF", "#FFA0F2", "#CCAA35", "#374527",
+                  "#8BB400", "#797868", "#C6005A", "#3B000A", "#C86240", "#29607C", "#402334", "#7D5A44", "#CCB87C",
+                  "#B88183", "#AA5199", "#B5D6C3", "#A38469", "#9F94F0", "#A74571", "#B894A6", "#71BB8C", "#00B433",
+                  "#789EC9", "#6D80BA", "#953F00", "#5EFF03", "#E4FFFC", "#1BE177", "#BCB1E5", "#76912F", "#003109",
+                  "#0060CD", "#D20096", "#895563", "#29201D", "#5B3213", "#A76F42", "#89412E", "#1A3A2A", "#494B5A",
+                  "#A88C85", "#F4ABAA", "#A3F3AB", "#00C6C8", "#EA8B66", "#958A9F", "#BDC9D2", "#9FA064", "#BE4700",
+                  "#658188", "#83A485", "#453C23", "#47675D", "#3A3F00", "#061203", "#DFFB71", "#868E7E", "#98D058",
+                  "#6C8F7D", "#D7BFC2", "#3C3E6E", "#D83D66", "#2F5D9B", "#6C5E46", "#D25B88", "#5B656C", "#00B57F",
+                  "#545C46", "#866097", "#365D25", "#252F99", "#00CCFF", "#674E60", "#FC009C", "#92896B"]
+    return colour_list
 
 eighteen_s_analysis = EighteenSAnalysis()
-# eighteen_s_analysis.do_seq_qc()
-# eighteen_s_analysis.identify_taxa_of_seqs_in_coral_samples()
+# eighteen_s_analysis.do_qc()
+# eighteen_s_analysis.do_taxa_annotations()
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='full')
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='low')
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_taxa_rel_abund')
@@ -2686,4 +2713,5 @@ eighteen_s_analysis = EighteenSAnalysis()
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='med')
 # eighteen_s_analysis.plot_pcoa_spp()
 # eighteen_s_analysis.plot_pcoa_spp_island()
+# eighteen_s_analysis.plot_pcoa_spp_18s_its2()
 
