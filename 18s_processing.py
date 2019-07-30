@@ -4,6 +4,10 @@ import sys
 import pickle
 from matplotlib.patches import Rectangle
 from matplotlib.collections import PatchCollection
+import matplotlib as mpl
+mpl.use('Agg')
+import matplotlib.pyplot as plt
+plt.ioff()
 import matplotlib.pyplot as plt
 # from matplotlib.pyplot import *
 from matplotlib.colors import ListedColormap
@@ -20,9 +24,12 @@ from multiprocessing import Queue, Process
 import itertools
 from scipy.spatial.distance import braycurtis
 from skbio.stats.ordination import pcoa
+from skbio.tree import TreeNode
+from skbio.diversity import beta_diversity
 from mpl_toolkits.mplot3d import Axes3D
 from plumbum import local
-import cropping
+import cropping, general
+import hashlib
 
 
 class EighteenSAnalysis:
@@ -62,12 +69,14 @@ class EighteenSAnalysis:
         es_its2_plotter = self.E18S_ITS2_PCOA_FIGURE(parent=self)
         es_its2_plotter.plot()
 
-    def plot_pcoa_spp(self):
-        spp_pcoa_plotter = self.PlotPCoASpp(parent=self)
+    def plot_pcoa_spp(self, distance_method='braycurtis'):
+        # TODO implement Unifrac
+        spp_pcoa_plotter = self.PlotPCoASpp(parent=self, distance_method=distance_method)
         spp_pcoa_plotter.plot()
 
-    def plot_pcoa_spp_island(self):
-        spp_island_pcoa_plotter = self.PlotPCoASppIsland(parent=self)
+    def plot_pcoa_spp_island(self, distance_method='braycurtis'):
+        # TODO implement Unifrac
+        spp_island_pcoa_plotter = self.PlotPCoASppIsland(parent=self, distance_method=distance_method)
         spp_island_pcoa_plotter.plot()
 
     def do_taxa_annotations(self):
@@ -89,9 +98,147 @@ class EighteenSAnalysis:
         sqc.do_seq_qc()
 
     class Generic_PCOA_DIST_Methods:
+        # TODO implement UniFrac
         """A class that will hold all of the methods that are required by the various PCoA-plotting classes"""
         def __init__(self, parent):
             self.parent = parent
+
+            # For unifrac only
+            self.abundance_df = None
+            self.unaligned_fasta_path = os.path.join(self.parent.dist_output_dir, 'seqs_for_unifrac.unaligned.fasta')
+            self.aligned_fasta_path = self.unaligned_fasta_path.replace('unaligned', 'aligned')
+            self.tree_out_path_unrooted = self.aligned_fasta_path + '.treefile'
+            self.tree_out_path_rooted = self.tree_out_path_unrooted.replace('.treefile', '.rooted.treefile')
+            self.rooted_tree = None
+
+        def _generate_unifrac_distance_and_pcoa_spp(self):
+            """
+            This is code for generating PCOAs for each of the coral species.
+            Read in the minor div dataframe which should have normalised abundances in them
+            For each sample we have a fasta that we can read in which has the normalised (to 1000) sequences
+            For feeding into med. We can use a default dict to collect the sequences and abundances from this fairly
+            simply.
+            This is likely best done one for each sample outside of the pairwise comparison to save on redoing the same
+            collection of the sequences.
+            We are now implementing this to use Unifrac rather than BrayCurtis. For the unifrac calculation, we will
+            need:
+            An abundance dataframe that is sample as rows and seqs as columns. We should be able to use the
+            minor_div_abundance_dict to make this.
+            We will also need a list of sequences that we will need to build a tree for.
+            The key for the dictionary is the actual nucleotide sequences so we can get the sequences from there.
+            If so then we will also be able to get this from the below methods.
+            We can then work with implementing the code form SymPortal to do most of the heavy
+            lifting fro making the distance matrix and the pcoa.
+            We will create the tree outside of the species for loop. That way we only have to compute the tree
+            once and we should be able to use the same tree for each of the species that we do. We should also
+            be able to use the same tree for the other unifrac work we do.
+            """
+
+            if os.path.isfile(os.path.join(self.parent.cache_dir, 'minor_div_abundance_dict.p')):
+                minor_div_abundance_dict = pickle.load(
+                    open(os.path.join(self.parent.cache_dir, 'minor_div_abundance_dict.p'), 'rb'))
+            else:
+                minor_div_abundance_dict = self._generate_minor_div_abundance_dict_from_scratch()
+
+            self._create_df_from_minor_div_dict(minor_div_abundance_dict)
+
+            columns, seq_fasta_list = self._make_all_seq_fasta_and_hash_names()
+
+            self._set_df_cols_as_hashes(columns)
+
+            self._align_seqs(seq_fasta_list)
+
+            self._make_and_root_tree()
+
+            spp_unifrac_pcoa_df_dict = {}
+            for spp in ['Porites', 'Pocillopora', 'Millepora']:
+                if os.path.isfile(os.path.join(self.parent.cache_dir, f'spp_unifrac_pcoa_df_{spp}.p')):
+                    spp_unifrac_pcoa_df = pickle.load(
+                        open(os.path.join(self.parent.cache_dir, f'spp_unifrac_pcoa_df_{spp}.p'), 'rb'))
+                else:
+                    spp_unifrac_pcoa_df = self._make_spp_unifrac_pcoa_df_from_scratch(
+                        minor_div_abundance_dict, spp)
+                spp_unifrac_pcoa_df_dict[spp] = spp_unifrac_pcoa_df
+            return spp_unifrac_pcoa_df_dict
+
+        def _make_spp_unifrac_pcoa_df_from_scratch(self, minor_div_abundance_dict, spp):
+            sample_names_of_spp, spp_df = self._get_subset_spp_df_for_unifrac(minor_div_abundance_dict, spp)
+            # perform unifrac
+            print('Performing unifrac calculations')
+            wu = beta_diversity(
+                metric='weighted_unifrac', counts=spp_df.to_numpy(),
+                ids=[str(_) for _ in list(spp_df.index)],
+                tree=self.rooted_tree, otu_ids=[str(_) for _ in list(spp_df.columns)])
+            spp_unifrac_pcoa_df = self._do_spp_pcoa_unifrac(sample_names_of_spp, spp, wu)
+            return spp_unifrac_pcoa_df
+
+        def _get_subset_spp_df_for_unifrac(self, minor_div_abundance_dict, spp):
+            # Get a list of the samples that we should be working with
+            sample_names_of_spp = self.parent.coral_info_df_for_figures.loc[
+                self.parent.coral_info_df_for_figures['genus'] == spp.upper()].index.values.tolist()
+            # remove the two porites species form this that seem to be total outliers
+            if spp == 'Porites':
+                sample_names_of_spp.remove('CO0001674')
+                sample_names_of_spp.remove('CO0001669')
+            # This is a subset of the main df that contains only the samples of the species in question
+            spp_df = minor_div_abundance_dict.loc[sample_names_of_spp]
+            spp_df = spp_df.loc[:, (spp_df != 0).any(axis=0)]
+            return sample_names_of_spp, spp_df
+
+        def _do_spp_pcoa_unifrac(self, sample_names_of_spp, spp, wu):
+            # compute the pcoa
+            pcoa_output = pcoa(wu.data)
+            pcoa_output.samples['sample'] = sample_names_of_spp
+            spp_unifrac_pcoa_df = pcoa_output.samples.set_index('sample')
+            # now add the variance explained as a final row to the renamed_dataframe
+            spp_unifrac_pcoa_df = spp_unifrac_pcoa_df.append(
+                pcoa_output.proportion_explained.rename('proportion_explained'))
+            pickle.dump(spp_unifrac_pcoa_df,
+                        open(os.path.join(self.parent.cache_dir, f'spp_unifrac_pcoa_df_{spp}.p'), 'wb'))
+            return spp_unifrac_pcoa_df
+
+        def _make_and_root_tree(self):
+            # make the tree
+            print('Testing models and making phylogenetic tree')
+            print('This could take some time...')
+            if not os.path.exists(self.tree_out_path_unrooted):
+                subprocess.run(
+                    ['iqtree', '-nt', 'AUTO', '-s', f'{self.aligned_fasta_path}'],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            # root the tree
+            print('Tree creation complete')
+            print('Rooting the tree at midpoint')
+            tree = TreeNode.read(self.tree_out_path_unrooted)
+            self.rooted_tree = tree.root_at_midpoint()
+            self.rooted_tree.write(self.tree_out_path_rooted)
+
+        def _align_seqs(self, seq_fasta_list):
+            general.write_list_to_destination(destination=self.unaligned_fasta_path, list_to_write=seq_fasta_list)
+            # here we have a fasta ready for alignment
+            if not os.path.exists(self.aligned_fasta_path):
+                general.mafft_align_fasta(input_path=self.unaligned_fasta_path, output_path=self.aligned_fasta_path,
+                                          method='auto', num_proc=6)
+
+        def _set_df_cols_as_hashes(self, columns):
+            # change the columns of the df
+            self.abundance_df.columns = columns
+
+        def _make_all_seq_fasta_and_hash_names(self):
+            # here we have a set of all of the sequences
+            seq_fasta_list = []
+            # we will change the df columns so that they match the seq names in the tree
+            columns = []
+            for seq in list(self.abundance_df):
+                hash_of_seq = hashlib.md5(seq.encode()).hexdigest()
+                if hash_of_seq in columns:
+                    sys.exit('non-unique hash')
+                seq_fasta_list.extend([f'>{hash_of_seq}', seq])
+                columns.append(hash_of_seq)
+            return columns, seq_fasta_list
+
+        def _create_df_from_minor_div_dict(self, minor_div_abundance_dict):
+            self.abundance_df = pd.DataFrame.from_dict(minor_div_abundance_dict, orient='index')
+            self.abundance_df[pd.isna(self.abundance_df)] = 0
 
         def _generate_bray_curtis_distance_and_pcoa_spp(self):
             """
@@ -127,9 +274,9 @@ class EighteenSAnalysis:
                         sample_names_of_spp.remove('CO0001669')
 
                     spp_distance_dict = self._get_spp_sample_distance_dict(minor_div_abundance_dict,
-                                                                           sample_names_of_spp)
+                                                                           sample_names_of_spp, spp)
 
-                    distance_out_file = self._make_and_write_out_spp_dist_file(sample_names_of_spp, spp_distance_dict)
+                    distance_out_file = self._make_and_write_out_spp_dist_file(sample_names_of_spp, spp_distance_dict, spp)
 
                     # Feed this into the generate_PCoA_coords method
                     spp_pcoa_df = self._generate_PCoA_coords(distance_out_file, spp)
@@ -182,7 +329,7 @@ class EighteenSAnalysis:
                 minor_div_abundance_dict, open(os.path.join(self.parent.cache_dir, 'minor_div_abundance_dict.p'), 'wb'))
             return minor_div_abundance_dict
 
-        def _make_and_write_out_spp_dist_file(self, sample_names_of_spp, spp_distance_dict):
+        def _make_and_write_out_spp_dist_file(self, sample_names_of_spp, spp_distance_dict, spp):
             # Generate the distance out file from this dictionary
             # from this dict we can produce the distance file that can be passed into the generate_PCoA_coords method
             distance_out_file = [len(sample_names_of_spp)]
@@ -206,17 +353,17 @@ class EighteenSAnalysis:
                     f.write('{}\n'.format(line))
             return distance_out_file
 
-        def _get_spp_sample_distance_dict(self, minor_div_abundance_dict, sample_names_of_spp):
+        def _get_spp_sample_distance_dict(self, minor_div_abundance_dict, sample_names_of_spp, spp):
             if os.path.isfile(os.path.join(self.parent.cache_dir, f'spp_distance_dict_{spp}.p')):
                 spp_distance_dict = pickle.load(
                     open(os.path.join(self.parent.cache_dir, f'spp_distance_dict_{spp}.p'), 'rb'))
 
             else:
                 spp_distance_dict = self._make_spp_sample_distance_dict_from_scratch(
-                    minor_div_abundance_dict, sample_names_of_spp)
+                    minor_div_abundance_dict, sample_names_of_spp, spp)
             return spp_distance_dict
 
-        def _make_spp_sample_distance_dict_from_scratch(self, minor_div_abundance_dict, sample_names_of_spp):
+        def _make_spp_sample_distance_dict_from_scratch(self, minor_div_abundance_dict, sample_names_of_spp, spp):
             # Create a dictionary that will hold the distance between the two samples
             spp_distance_dict = {}
             # For pairwise comparison of each of these sequences
@@ -731,11 +878,12 @@ class EighteenSAnalysis:
 
     class PlotPCoASpp(Generic_PCOA_DIST_Methods, GenericPlottingMethods):
 
-        def __init__(self, parent):
+        def __init__(self, parent, distance_method):
             EighteenSAnalysis.GenericPlottingMethods.__init__(self)
             EighteenSAnalysis.Generic_PCOA_DIST_Methods.__init__(self, parent=parent)
             self.colour_dict = {'SITE01': '#C0C0C0', 'SITE02': '#808080', 'SITE03': '#000000'}
             self.marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
+            self.distance_method = distance_method
 
         def plot(self, is_three_d=False):
             """
@@ -743,7 +891,10 @@ class EighteenSAnalysis:
             """
 
             # For each species, get the pcoa df
-            pcoa_df_dict = self._generate_bray_curtis_distance_and_pcoa_spp()
+            if self.distance_method == 'braycurtis':
+                pcoa_df_dict = self._generate_bray_curtis_distance_and_pcoa_spp()
+            elif self.distance_method == 'unifrac':
+                pcoa_df_dict = self._generate_unifrac_distance_and_pcoa_spp()
 
             # setup figure
             spp_list = ['Porites', 'Pocillopora', 'Millepora']
@@ -834,12 +985,13 @@ class EighteenSAnalysis:
 
     class PlotPCoASppIsland(Generic_PCOA_DIST_Methods, GenericPlottingMethods):
 
-        def __init__(self, parent):
+        def __init__(self, parent, distance_method):
             EighteenSAnalysis.GenericPlottingMethods.__init__(self)
             EighteenSAnalysis.Generic_PCOA_DIST_Methods.__init__(self, parent=parent)
             self.coral_info_df_for_figures = self.parent.coral_info_df_for_figures
             self.cache_dir = self.parent.cache_dir
             self.figure_output_dir = self.parent.figure_output_dir
+            self.distance_method = distance_method
 
         def plot(self):
             """
@@ -951,11 +1103,11 @@ class EighteenSAnalysis:
                                 sample_names_of_spp.remove('CO0001674')
                                 sample_names_of_spp.remove('CO0001669')
 
-                        spp_island_distance_dict = self._get_spp_island_distance_dict(minor_div_abundance_dict,
-                                                                                      sample_names_of_spp)
+                        spp_island_distance_dict = self._get_spp_island_distance_dict(
+                            minor_div_abundance_dict, sample_names_of_spp, spp, island)
 
-                        distance_out_file = self._make_and_output_distance_file_spp_island(sample_names_of_spp,
-                                                                                           spp_island_distance_dict)
+                        distance_out_file = self._make_and_output_distance_file_spp_island(
+                            sample_names_of_spp, spp_island_distance_dict, spp, island)
 
                         # Feed this into the generate_PCoA_coords method
                         spp_island_pcoa_df = self._generate_PCoA_coords(distance_out_file, spp)
@@ -964,7 +1116,7 @@ class EighteenSAnalysis:
                     spp_island_pcoa_df_dict['{}_{}'.format(spp, island)] = spp_island_pcoa_df
             return spp_island_pcoa_df_dict
 
-        def _make_and_output_distance_file_spp_island(self, sample_names_of_spp, spp_island_distance_dict):
+        def _make_and_output_distance_file_spp_island(self, sample_names_of_spp, spp_island_distance_dict, spp, island):
             # Generate the distance out file from this dictionary
             # from this dict we can produce the distance file that can be passed into the generate_PCoA_coords method
             distance_out_file = [len(sample_names_of_spp)]
@@ -989,17 +1141,17 @@ class EighteenSAnalysis:
                     f.write('{}\n'.format(line))
             return distance_out_file
 
-        def _get_spp_island_distance_dict(self, minor_div_abundance_dict, sample_names_of_spp):
+        def _get_spp_island_distance_dict(self, minor_div_abundance_dict, sample_names_of_spp, spp, island):
             if os.path.isfile(os.path.join(self.cache_dir, f'spp_island_distance_dict_{spp}_{island}.p')):
                 spp_island_distance_dict = pickle.load(
                     open(os.path.join(self.cache_dir, f'spp_island_distance_dict_{spp}_{island}.p'), 'rb'))
 
             else:
                 spp_island_distance_dict = self._generate_spp_island_distance_dict_from_scratch(
-                    minor_div_abundance_dict, sample_names_of_spp)
+                    minor_div_abundance_dict, sample_names_of_spp, spp, island)
             return spp_island_distance_dict
 
-        def _generate_spp_island_distance_dict_from_scratch(self, minor_div_abundance_dict, sample_names_of_spp):
+        def _generate_spp_island_distance_dict_from_scratch(self, minor_div_abundance_dict, sample_names_of_spp, spp, island):
             # Create a dictionary that will hold the distance between the two samples
             spp_island_distance_dict = {}
             # For pairwise comparison of each of these sequences
@@ -2711,7 +2863,7 @@ eighteen_s_analysis = EighteenSAnalysis()
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_taxa_rel_abund')
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_absolute')
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='med')
-# eighteen_s_analysis.plot_pcoa_spp()
+eighteen_s_analysis.plot_pcoa_spp(distance_method='unifrac')
 # eighteen_s_analysis.plot_pcoa_spp_island()
 # eighteen_s_analysis.plot_pcoa_spp_18s_its2()
 
