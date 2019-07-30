@@ -3,7 +3,6 @@
 .idea/
 .ncbirc
 __pycache__/
-cropping.py
 sample_abundance_df.pkl
 *.svg
 *.png
