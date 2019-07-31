@@ -17,89 +17,97 @@ def main():
 
     args = parser.parse_args()
 
-    input_path = args.input
-    output_path = args.output
-    cutoff = args.cutoff
+    cropper = Cropper(input_path=args.input, output_path=args.output, cutoff=args.cutoff)
+    cropper.crop()
 
-    crop_fasta(input_path, output_path, cutoff)
-
-
-def crop_fasta(input_path, output_path, cutoff=1.0):
-    # read in the path to the input fasta as list object
-    try:
-        fasta_to_crop = read_file_to_list(input_path)
-    except:
-        sys.exit('error reading in the aligned fasta')
-
-    # input_path = '{}/test_fastas/tester_aligned.fasta'.format(os.getcwd())
-    # output_path = '{}/test_fastas/tester_aligned_cropped.fasta'.format(os.getcwd())
-    # try:
-    #     fasta_to_crop = read_file_to_list(input_path)
-    # except:
-    #     sys.exit('error reading in the aligned fasta')
-    # create a df from the fasta
-    fasta_as_pandas_df = fasta_to_pandas_df(fasta_as_list=fasta_to_crop)
-    # crop the df
-    cropped_fasta_as_df = crop_aligned_fasta_df(aligned_fasta_as_pandas_df_to_crop=fasta_as_pandas_df, cutoff=cutoff)
-    # convert the df back to list object ready to write out
-    cropped_fasta_list = pandas_df_to_fasta(cropped_fasta_df=cropped_fasta_as_df)
-    # now write out the corpped fasta list
-    write_list_as_file_to_path(cropped_fasta_list, output_path)
-
-
-def read_file_to_list(filename):
-    with open(filename, mode='r') as f:
-         return [line.rstrip() for line in f]
-
-def write_list_as_file_to_path(file, path):
-    with open(path, 'w') as f:
-        for line in file:
-            f.write('{}\n'.format(line))
-
-def fasta_to_pandas_df(fasta_as_list):
-    temp_df = pd.DataFrame([list(line) for line in fasta_as_list if not line.startswith('>')])
-    seq_names = [line[1:] for line in fasta_as_list if line.startswith('>')]
-    temp_df.index=seq_names
-    return temp_df
-
-def crop_aligned_fasta_df(aligned_fasta_as_pandas_df_to_crop, cutoff):
-    columns_to_drop = []
-    for i in list(aligned_fasta_as_pandas_df_to_crop):
-        # if there is a gap in the column at the beginning
-        #add functionality to incorporate the cutoff.
-        # this cutoff will mean that the proportion of the gaps in a column must be greater than this for the
-        # column to be removed from the df. Once a column has been reached that has a proportion lower than this value
-        # cropping will be complete for that end.
-        list_of_col_characters = aligned_fasta_as_pandas_df_to_crop.loc[:, i].values.tolist()
-        count_of_gaps = list_of_col_characters.count('-') + list_of_col_characters.count('*')
-        total_characters = len(list_of_col_characters)
-        prop_of_gaps = count_of_gaps / total_characters
-        if prop_of_gaps >= cutoff:
-            columns_to_drop.append(i)
+class Cropper:
+    def __init__(self, input_path=None, output_path=None, aligned_fasta_as_list = None, cutoff=1.0, return_as='list'):
+        # if working with input path
+        if input_path:
+            self.fasta_as_pandas_df = self._fasta_to_pandas_df(self._read_file_to_list(input_path))
+        elif aligned_fasta_as_list:
+            self.fasta_as_pandas_df = self._fasta_to_pandas_df(aligned_fasta_as_list)
         else:
-            break
-    for i in reversed(list(aligned_fasta_as_pandas_df_to_crop)):
-        # if there is a gap in the column at the end
-        list_of_col_characters = aligned_fasta_as_pandas_df_to_crop.loc[:, i].values.tolist()
-        count_of_gaps = list_of_col_characters.count('-') + list_of_col_characters.count('*')
-        total_characters = len(list_of_col_characters)
-        prop_of_gaps = count_of_gaps / total_characters
-        if prop_of_gaps >= cutoff:
-            columns_to_drop.append(i)
+            raise RuntimeError('Please provide either the path to the aligned fasta or the aligned fasta as a list')
+
+        # if output path then we will write out the cropped fasta, else we will return as a list
+        if output_path:
+            self.return_as = 'fasta_file'
+            self.output_path = output_path
         else:
-            break
+            self.return_as = return_as
 
-    # get a list that is the columns indices that we want to keep
-    col_to_keep = [col_index for col_index in list(aligned_fasta_as_pandas_df_to_crop) if col_index not in columns_to_drop]
+        self.cutoff = cutoff
 
-    # drop the gap columns
-    return aligned_fasta_as_pandas_df_to_crop[col_to_keep]
+        self.cropped_fasta_as_df = None
+        self.corpped_fasta_as_list = None
 
-def pandas_df_to_fasta(cropped_fasta_df):
-    temp_fasta = []
-    for ind in cropped_fasta_df.index.tolist():
-        temp_fasta.extend(['>{}'.format(ind), ''.join(list(cropped_fasta_df.loc[ind]))])
-    return temp_fasta
+    def crop(self):
+
+        # crop the df
+        self.cropped_fasta_as_df = self._crop_aligned_fasta_df()
+        # convert the df back to list object ready to write out
+        if self.return_as == 'list':
+            return self._pandas_df_to_fasta()
+        elif self.return_as == 'fasta_file':
+            self.cropped_fasta_list = self._pandas_df_to_fasta()
+            # now write out the corpped fasta list
+            self._write_list_as_file_to_path()
+
+    def _read_file_to_list(self, filename):
+        with open(filename, mode='r') as f:
+             return [line.rstrip() for line in f]
+
+    def _write_list_as_file_to_path(self):
+        with open(self.output_path, 'w') as f:
+            for line in self.cropped_fasta_list:
+                f.write('{}\n'.format(line))
+
+    def _fasta_to_pandas_df(self, fasta_as_list):
+        temp_df = pd.DataFrame([list(line) for line in fasta_as_list if not line.startswith('>')])
+        seq_names = [line[1:] for line in fasta_as_list if line.startswith('>')]
+        temp_df.index=seq_names
+        return temp_df
+
+    def _crop_aligned_fasta_df(self):
+        columns_to_drop = []
+        for i in list(self.fasta_as_pandas_df):
+            # if there is a gap in the column at the beginning
+            #add functionality to incorporate the cutoff.
+            # this cutoff will mean that the proportion of the gaps in a column must be greater than this for the
+            # column to be removed from the df. Once a column has been reached that has a proportion lower than this value
+            # cropping will be complete for that end.
+            list_of_col_characters = self.fasta_as_pandas_df.loc[:, i].values.tolist()
+            count_of_gaps = list_of_col_characters.count('-') + list_of_col_characters.count('*')
+            total_characters = len(list_of_col_characters)
+            prop_of_gaps = count_of_gaps / total_characters
+            if prop_of_gaps >= self.cutoff:
+                columns_to_drop.append(i)
+            else:
+                break
+
+        for i in reversed(list(self.fasta_as_pandas_df)):
+            # if there is a gap in the column at the end
+            list_of_col_characters = self.fasta_as_pandas_df.loc[:, i].values.tolist()
+            count_of_gaps = list_of_col_characters.count('-') + list_of_col_characters.count('*')
+            total_characters = len(list_of_col_characters)
+            prop_of_gaps = count_of_gaps / total_characters
+            if prop_of_gaps >= self.cutoff:
+                columns_to_drop.append(i)
+            else:
+                break
+
+        # get a list that is the columns indices that we want to keep
+        col_to_keep = [col_index for col_index in list(self.fasta_as_pandas_df) if col_index not in columns_to_drop]
+
+        # drop the gap columns
+        return self.fasta_as_pandas_df[col_to_keep]
+
+    def _pandas_df_to_fasta(self):
+        temp_fasta = []
+        for ind in self.cropped_fasta_as_df.index.tolist():
+            temp_fasta.extend(['>{}'.format(ind), ''.join(list(self.cropped_fasta_as_df.loc[ind]))])
+        return temp_fasta
 
 if __name__ == "__main__":
     main()

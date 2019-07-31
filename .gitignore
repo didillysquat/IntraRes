@@ -1,4 +1,5 @@
 fasta2net.py
+.DS_Store
 general.py
 /dist
 /cache

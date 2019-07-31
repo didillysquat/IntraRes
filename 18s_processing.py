@@ -28,9 +28,10 @@ from skbio.tree import TreeNode
 from skbio.diversity import beta_diversity
 from mpl_toolkits.mplot3d import Axes3D
 from plumbum import local
-import cropping, general, fasta2net
+import general, fasta2net
+from cropping import Cropper
 import hashlib
-
+from Bio import SeqIO
 
 class EighteenSAnalysis:
     def __init__(self):
@@ -68,16 +69,16 @@ class EighteenSAnalysis:
         # else look to see if they are in the input directory
         self.symportal_seq_output_relative_path_input_dir = os.path.join(self.input_dir, '2018-10-21_08-59-37.620726.DIVs.relative.txt')
         self.symportal_profile_output_relative_path_input_dir = os.path.join(self.input_dir, '34_init_tara_standalone_all_samps_151018_2018-10-21_08-45-56.507454.profiles.relative.txt')
-    def plot_pcoa_spp_18s_its2(self, distance_method='bray_curtis'):
-        es_its2_plotter = self.E18S_ITS2_PCOA_FIGURE(parent=self, distance_method=distance_method)
+    def plot_pcoa_spp_18s_its2(self, distance_method='bray_curtis', crop_seqs=True):
+        es_its2_plotter = self.E18S_ITS2_PCOA_FIGURE(parent=self, distance_method=distance_method, crop_seqs=crop_seqs)
         es_its2_plotter.plot()
 
-    def plot_pcoa_spp(self, distance_method='braycurtis'):
-        spp_pcoa_plotter = self.PlotPCoASpp(parent=self, distance_method=distance_method)
+    def plot_pcoa_spp(self, distance_method='braycurtis', crop_seqs=True):
+        spp_pcoa_plotter = self.PlotPCoASpp(parent=self, distance_method=distance_method, crop_seqs=crop_seqs)
         spp_pcoa_plotter.plot()
 
-    def plot_pcoa_spp_island(self, distance_method='braycurtis'):
-        spp_island_pcoa_plotter = self.PlotPCoASppIsland(parent=self, distance_method=distance_method)
+    def plot_pcoa_spp_island(self, distance_method='braycurtis', crop_seqs=True):
+        spp_island_pcoa_plotter = self.PlotPCoASppIsland(parent=self, distance_method=distance_method, crop_seqs=crop_seqs)
         spp_island_pcoa_plotter.plot()
 
     def do_taxa_annotations(self):
@@ -101,15 +102,19 @@ class EighteenSAnalysis:
     class Generic_PCOA_DIST_Methods:
         # TODO implement UniFrac
         """A class that will hold all of the methods that are required by the various PCoA-plotting classes"""
-        def __init__(self, parent):
+        def __init__(self, parent, crop_seqs):
             self.parent = parent
-
+            self.crop_seqs = crop_seqs
             # For unifrac only
             self.abundance_df = None
             self.unaligned_fasta_path = os.path.join(self.parent.dist_output_dir, 'seqs_for_unifrac.unaligned.fasta')
             self.aligned_fasta_path = self.unaligned_fasta_path.replace('unaligned', 'aligned')
+            self.unaligned_fasta_path_cropped = os.path.join(self.parent.dist_output_dir, 'seqs_for_unifrac.unaligned.cropped.fasta')
+            self.aligned_fasta_path_cropped = self.unaligned_fasta_path_cropped.replace('unaligned', 'aligned')
             self.tree_out_path_unrooted = self.aligned_fasta_path + '.treefile'
             self.tree_out_path_rooted = self.tree_out_path_unrooted.replace('.treefile', '.rooted.treefile')
+            self.tree_out_path_unrooted_cropped = self.aligned_fasta_path_cropped + '.treefile'
+            self.tree_out_path_rooted_cropped = self.tree_out_path_unrooted_cropped.replace('.treefile', '.rooted.treefile')
             self.rooted_tree = None
 
         def _generate_unifrac_distance_and_pcoa_spp(self):
@@ -149,17 +154,83 @@ class EighteenSAnalysis:
 
             self._align_seqs(seq_fasta_list)
 
-            self._make_and_root_tree()
+            if self.crop_seqs:
+                self._crop_and_consolidate()
+
+                self._make_and_root_tree_cropped()
+            else:
+                self._make_and_root_tree()
 
             spp_unifrac_pcoa_df_dict = {}
             for spp in ['Porites', 'Pocillopora', 'Millepora']:
-                if os.path.isfile(os.path.join(self.parent.cache_dir, f'spp_unifrac_pcoa_df_{spp}.p')):
-                    spp_unifrac_pcoa_df = pickle.load(
-                        open(os.path.join(self.parent.cache_dir, f'spp_unifrac_pcoa_df_{spp}.p'), 'rb'))
+                if not self.crop_seqs:
+                    if os.path.isfile(os.path.join(self.parent.cache_dir, f'spp_unifrac_pcoa_df_{spp}.p')):
+                        spp_unifrac_pcoa_df = pickle.load(
+                            open(os.path.join(self.parent.cache_dir, f'spp_unifrac_pcoa_df_{spp}.p'), 'rb'))
+                    else:
+                        spp_unifrac_pcoa_df = self._make_spp_unifrac_pcoa_df_from_scratch(spp)
                 else:
-                    spp_unifrac_pcoa_df = self._make_spp_unifrac_pcoa_df_from_scratch(spp)
+                    if os.path.isfile(os.path.join(self.parent.cache_dir, f'spp_unifrac_pcoa_df_{spp}_cropped.p')):
+                        spp_unifrac_pcoa_df = pickle.load(
+                            open(os.path.join(self.parent.cache_dir, f'spp_unifrac_pcoa_df_{spp}_cropped.p'), 'rb'))
+                    else:
+                        spp_unifrac_pcoa_df = self._make_spp_unifrac_pcoa_df_from_scratch(spp)
                 spp_unifrac_pcoa_df_dict[spp] = spp_unifrac_pcoa_df
             return spp_unifrac_pcoa_df_dict
+
+        def _crop_and_consolidate(self):
+            self._crop_alignment()
+            unaligned_cropped_seq_collection = self._read_in_cropped_seqs_as_collection()
+            cropped_unaligned_fasta_no_gaps, new_hash_to_old_hash_dd = self._get_new_to_old_hash_dict_and_reunique_fasta(
+                unaligned_cropped_seq_collection)
+            self._reunique_abundance_df(new_hash_to_old_hash_dd)
+            self._write_out_fasta(cropped_unaligned_fasta_no_gaps)
+            # now align it
+            if not os.path.exists(self.aligned_fasta_path_cropped):
+                general.mafft_align_fasta(
+                    input_path=self.unaligned_fasta_path_cropped,
+                    output_path=self.aligned_fasta_path_cropped,
+                    num_proc=7)
+            sequential_fasta = general.convert_interleaved_to_sequencial_fasta(
+                general.read_defined_file_to_list(self.aligned_fasta_path_cropped))
+            general.write_list_to_destination(self.aligned_fasta_path_cropped, sequential_fasta)
+
+        def _write_out_fasta(self, cropped_unaligned_fasta_no_gaps):
+            # here we have the df consolidated.
+            # now we need to redo the alignment
+            general.write_list_to_destination(
+                destination=self.unaligned_fasta_path_cropped,
+                list_to_write=cropped_unaligned_fasta_no_gaps)
+
+        def _reunique_abundance_df(self, new_hash_to_old_hash_dd):
+            # here we have the dd that relates the new hashes to the old hashes.
+            # we also have a new fasta that is the cropped fasta seqs but with no gaps
+            # now work on the dataframe
+            for new_hash_key, old_hash_list in new_hash_to_old_hash_dd.items():
+                # create the new column that sums all columns in the old hash list
+                self.abundance_df[new_hash_key] = self.abundance_df[old_hash_list].sum(axis=1)
+                # then delete the old hash columns from the df
+                self.abundance_df.drop(labels=old_hash_list, axis='columns', inplace=True)
+
+        def _get_new_to_old_hash_dict_and_reunique_fasta(self, unaligned_cropped_seq_collection):
+            new_hash_to_old_hash_dd = defaultdict(list)
+            cropped_unaligned_fasta_no_gaps = []
+            for seq_obj in unaligned_cropped_seq_collection:
+                no_dash_seq = seq_obj.seq._data.replace('-', '')
+                new_hash = hashlib.md5(no_dash_seq.encode()).hexdigest()
+                if new_hash not in new_hash_to_old_hash_dd:
+                    cropped_unaligned_fasta_no_gaps.extend([f'>{new_hash}', no_dash_seq])
+                new_hash_to_old_hash_dd[new_hash].append(seq_obj.id)
+            return cropped_unaligned_fasta_no_gaps, new_hash_to_old_hash_dd
+
+        def _read_in_cropped_seqs_as_collection(self):
+            unaligned_cropped_seq_collection = list(SeqIO.parse(self.unaligned_fasta_path_cropped, "fasta"))
+            return unaligned_cropped_seq_collection
+
+        def _crop_alignment(self):
+            cropper = Cropper(input_path=self.aligned_fasta_path, output_path=self.unaligned_fasta_path_cropped,
+                              cutoff=0.05)
+            cropper.crop()
 
         def _make_spp_unifrac_pcoa_df_from_scratch(self, spp):
             sample_names_of_spp, spp_df = self._get_subset_spp_df_for_unifrac(spp)
@@ -169,6 +240,14 @@ class EighteenSAnalysis:
                 metric='weighted_unifrac', counts=spp_df.to_numpy(),
                 ids=[str(_) for _ in list(spp_df.index)],
                 tree=self.rooted_tree, otu_ids=[str(_) for _ in list(spp_df.columns)])
+
+            if not self.crop_seqs:
+                d_path = os.path.join(self.parent.dist_output_dir, f'unifrac_within_sample_spp_distances_{spp}.dist')
+            else:
+                d_path = os.path.join(self.parent.dist_output_dir, f'unifrac_within_sample_spp_distances_{spp}_cropped.dist')
+
+            wu_df = wu.to_data_frame()
+            wu_df.to_csv(path_or_buf=d_path, index=True, header=False)
             spp_unifrac_pcoa_df = self._do_spp_pcoa_unifrac(sample_names_of_spp, spp, wu)
             return spp_unifrac_pcoa_df
 
@@ -193,8 +272,13 @@ class EighteenSAnalysis:
             # now add the variance explained as a final row to the renamed_dataframe
             spp_unifrac_pcoa_df = spp_unifrac_pcoa_df.append(
                 pcoa_output.proportion_explained.rename('proportion_explained'))
-            pickle.dump(spp_unifrac_pcoa_df,
-                        open(os.path.join(self.parent.cache_dir, f'spp_unifrac_pcoa_df_{spp}.p'), 'wb'))
+
+            if not self.crop_seqs:
+                pickle.dump(spp_unifrac_pcoa_df,
+                            open(os.path.join(self.parent.cache_dir, f'spp_unifrac_pcoa_df_{spp}.p'), 'wb'))
+            else:
+                pickle.dump(spp_unifrac_pcoa_df,
+                            open(os.path.join(self.parent.cache_dir, f'spp_unifrac_pcoa_df_{spp}_cropped.p'), 'wb'))
             return spp_unifrac_pcoa_df
 
         def _make_and_root_tree(self):
@@ -214,13 +298,30 @@ class EighteenSAnalysis:
             self.rooted_tree = tree.root_at_midpoint()
             self.rooted_tree.write(self.tree_out_path_rooted)
 
+        def _make_and_root_tree_cropped(self):
+            # make the tree
+            print('Testing models and making phylogenetic tree')
+            print('This could take some time...')
+            if not os.path.exists(self.tree_out_path_unrooted_cropped):
+                subprocess.run(
+                    ['iqtree', '-nt', 'AUTO', '-s', f'{self.aligned_fasta_path_cropped}'])
+            else:
+                print('Tree already exists. Using existing tree.')
+            # root the tree
+            print('Tree creation complete')
+            print('Rooting the tree at midpoint')
+            tree = TreeNode.read(self.tree_out_path_unrooted_cropped)
+            self.rooted_tree = tree.root_at_midpoint()
+            self.rooted_tree.write(self.tree_out_path_rooted_cropped)
+
         def _align_seqs(self, seq_fasta_list):
             general.write_list_to_destination(destination=self.unaligned_fasta_path, list_to_write=seq_fasta_list)
             # here we have a fasta ready for alignment
             if not os.path.exists(self.aligned_fasta_path):
                 general.mafft_align_fasta(input_path=self.unaligned_fasta_path, output_path=self.aligned_fasta_path,
                                           method='auto', num_proc=6)
-
+            sequential_fasta = general.convert_interleaved_to_sequencial_fasta(general.read_defined_file_to_list(self.aligned_fasta_path))
+            general.write_list_to_destination(self.aligned_fasta_path, sequential_fasta)
         def _set_df_cols_as_hashes(self, columns):
             # change the columns of the df
             self.abundance_df.columns = columns
@@ -456,8 +557,8 @@ class EighteenSAnalysis:
         """A class  for holding the methods specific to plotting the figure that links the 18S ordinations with the
         zooxs its2 information.
         """
-        def __init__(self, parent, distance_method):
-            EighteenSAnalysis.Generic_PCOA_DIST_Methods.__init__(self, parent)
+        def __init__(self, parent, distance_method, crop_seqs):
+            EighteenSAnalysis.Generic_PCOA_DIST_Methods.__init__(self, parent, crop_seqs)
             EighteenSAnalysis.GenericPlottingMethods.__init__(self)
             self.foo = 'asdf'
             self.distance_method = distance_method
@@ -600,9 +701,21 @@ class EighteenSAnalysis:
 
             self.fig.show()
 
-            plt.savefig(os.path.join(self.parent.figure_output_dir, f'spp_{self.distance_method}_pcoa_with_its2.png'), dpi=1200)
-            plt.savefig(os.path.join(self.parent.figure_output_dir, f'spp_{self.distance_method}_pcoa_with_its2.svg'))
-
+            if not self.crop_seqs:
+                plt.savefig(
+                    os.path.join(
+                        self.parent.figure_output_dir,
+                        f'spp_{self.distance_method}_pcoa_with_its2.png'), dpi=1200)
+                plt.savefig(
+                    os.path.join(
+                        self.parent.figure_output_dir,
+                        f'spp_{self.distance_method}_pcoa_with_its2.svg'))
+            else:
+                plt.savefig(
+                    os.path.join(self.parent.figure_output_dir, f'spp_{self.distance_method}_pcoa_cropped_with_its2.png'),
+                    dpi=1200)
+                plt.savefig(
+                    os.path.join(self.parent.figure_output_dir, f'spp_{self.distance_method}_pcoa_cropped_with_its2.svg'))
             return
 
         def _plot_data_axes_its2(self):
@@ -901,9 +1014,9 @@ class EighteenSAnalysis:
 
     class PlotPCoASpp(Generic_PCOA_DIST_Methods, GenericPlottingMethods):
 
-        def __init__(self, parent, distance_method):
+        def __init__(self, parent, distance_method, crop_seqs):
             EighteenSAnalysis.GenericPlottingMethods.__init__(self)
-            EighteenSAnalysis.Generic_PCOA_DIST_Methods.__init__(self, parent=parent)
+            EighteenSAnalysis.Generic_PCOA_DIST_Methods.__init__(self, parent=parent, crop_seqs=crop_seqs)
             self.colour_dict = {'SITE01': '#C0C0C0', 'SITE02': '#808080', 'SITE03': '#000000'}
             self.marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
             self.distance_method = distance_method
@@ -1003,14 +1116,21 @@ class EighteenSAnalysis:
 
             fig.show()
             if not is_three_d:
-                plt.savefig(os.path.join(self.parent.figure_output_dir, f'spp_{self.distance_method}_pcoa_with_pc3_pc4.png'), dpi=1200)
-                plt.savefig(os.path.join(self.parent.figure_output_dir, f'spp_{self.distance_method}_pcoa_with_pc3_pc4.svg'))
+                if not self.crop_seqs:
+                    plt.savefig(os.path.join(self.parent.figure_output_dir, f'spp_{self.distance_method}_pcoa_with_pc3_pc4.png'), dpi=1200)
+                    plt.savefig(os.path.join(self.parent.figure_output_dir, f'spp_{self.distance_method}_pcoa_with_pc3_pc4.svg'))
+                else:
+                    plt.savefig(os.path.join(
+                        self.parent.figure_output_dir, f'spp_{self.distance_method}_pcoa_with_pc3_pc4_cropped.png'), dpi=1200)
+                    plt.savefig(os.path.join(
+                        self.parent.figure_output_dir, f'spp_{self.distance_method}_pcoa_with_pc3_pc4_cropped.svg'))
+
 
     class PlotPCoASppIsland(Generic_PCOA_DIST_Methods, GenericPlottingMethods):
 
-        def __init__(self, parent, distance_method):
+        def __init__(self, parent, distance_method, crop_seqs):
             EighteenSAnalysis.GenericPlottingMethods.__init__(self)
-            EighteenSAnalysis.Generic_PCOA_DIST_Methods.__init__(self, parent=parent)
+            EighteenSAnalysis.Generic_PCOA_DIST_Methods.__init__(self, parent=parent, crop_seqs=crop_seqs)
             self.coral_info_df_for_figures = self.parent.coral_info_df_for_figures
             self.cache_dir = self.parent.cache_dir
             self.figure_output_dir = self.parent.figure_output_dir
@@ -1091,8 +1211,13 @@ class EighteenSAnalysis:
             self._vert_leg_axis(colour_dict, legend_ax, marker_dict)
 
             fig.show()
-            plt.savefig(os.path.join(self.figure_output_dir, f'spp_island_{self.distance_method}_pcoa.png'), dpi=1200)
-            plt.savefig(os.path.join(self.figure_output_dir, f'spp_island_{self.distance_method}_pcoa.svg'))
+            if not self.crop_seqs:
+                plt.savefig(os.path.join(self.figure_output_dir, f'spp_island_{self.distance_method}_pcoa.png'), dpi=1200)
+                plt.savefig(os.path.join(self.figure_output_dir, f'spp_island_{self.distance_method}_pcoa.svg'))
+            else:
+                plt.savefig(os.path.join(self.figure_output_dir, f'spp_island_{self.distance_method}_pcoa_cropped.png'),
+                            dpi=1200)
+                plt.savefig(os.path.join(self.figure_output_dir, f'spp_island_{self.distance_method}_pcoa_cropped.svg'))
 
         def _generate_unifrac_distance_and_pcoa_spp_and_island(self):
             if os.path.isfile(os.path.join(self.parent.cache_dir, 'minor_div_abundance_dict.p')):
@@ -1109,16 +1234,29 @@ class EighteenSAnalysis:
 
             self._align_seqs(seq_fasta_list)
 
-            self._make_and_root_tree()
+            if self.crop_seqs:
+                self._crop_and_consolidate()
+
+                self._make_and_root_tree_cropped()
+            else:
+                self._make_and_root_tree()
 
             spp_island_unifrac_pcoa_df_dict = {}
             for spp in ['PORITES', 'POCILLOPORA', 'MILLEPORA']:
                 for island in ['ISLAND06', 'ISLAND10', 'ISLAND15']:
-                    if os.path.isfile(os.path.join(self.cache_dir, f'spp_island_unifrac_pcoa_df_{spp}_{island}.p')):
-                        spp_island_unifrac_pcoa_df = pickle.load(
-                            open(os.path.join(self.cache_dir, f'spp_island_unifrac_pcoa_df_{spp}_{island}.p'), 'rb'))
+                    if not self.crop_seqs:
+                        if os.path.isfile(os.path.join(self.cache_dir, f'spp_island_unifrac_pcoa_df_{spp}_{island}.p')):
+                            spp_island_unifrac_pcoa_df = pickle.load(
+                                open(os.path.join(self.cache_dir, f'spp_island_unifrac_pcoa_df_{spp}_{island}.p'), 'rb'))
+                        else:
+                            spp_island_unifrac_pcoa_df = self._make_spp_island_unifrac_pcoa_df_from_scratch(spp, island)
                     else:
-                        spp_island_unifrac_pcoa_df = self._make_spp_island_unifrac_pcoa_df_from_scratch(spp, island)
+                        if os.path.isfile(os.path.join(self.cache_dir, f'spp_island_unifrac_pcoa_df_{spp}_{island}_cropped.p')):
+                            spp_island_unifrac_pcoa_df = pickle.load(
+                                open(os.path.join(self.cache_dir, f'spp_island_unifrac_pcoa_df_{spp}_{island}_cropped.p'),
+                                     'rb'))
+                        else:
+                            spp_island_unifrac_pcoa_df = self._make_spp_island_unifrac_pcoa_df_from_scratch(spp, island)
                     spp_island_unifrac_pcoa_df_dict[f'{spp}_{island}'] = spp_island_unifrac_pcoa_df
             return spp_island_unifrac_pcoa_df_dict
 
@@ -1174,6 +1312,14 @@ class EighteenSAnalysis:
                 ids=[str(_) for _ in list(spp_island_df.index)],
                 tree=self.rooted_tree, otu_ids=[str(_) for _ in list(spp_island_df.columns)])
 
+            if not self.crop_seqs:
+                d_path = os.path.join(self.parent.dist_output_dir, f'unifrac_within_sample_spp_island_distances_{spp}_{island}.dist')
+            else:
+                d_path = os.path.join(self.parent.dist_output_dir, f'unifrac_within_sample_spp_island_distances_{spp}_{island}_cropped.dist')
+
+            wu_df = wu.to_data_frame()
+            wu_df.to_csv(path_or_buf=d_path, index=True, header=False)
+
             # compute the pcoa
             pcoa_output = pcoa(wu.data)
             pcoa_output.samples['sample'] = sample_names_of_spp_island
@@ -1181,8 +1327,14 @@ class EighteenSAnalysis:
             # now add the variance explained as a final row to the renamed_dataframe
             spp_unifrac_pcoa_df = spp_unifrac_pcoa_df.append(
                 pcoa_output.proportion_explained.rename('proportion_explained'))
-            pickle.dump(spp_unifrac_pcoa_df,
-                        open(os.path.join(self.parent.cache_dir, f'spp_island_unifrac_pcoa_df_{spp}_{island}.p'), 'wb'))
+            if not self.crop_seqs:
+                pickle.dump(spp_unifrac_pcoa_df,
+                            open(os.path.join(
+                                self.parent.cache_dir, f'spp_island_unifrac_pcoa_df_{spp}_{island}.p'), 'wb'))
+            else:
+                pickle.dump(spp_unifrac_pcoa_df,
+                            open(os.path.join(
+                                self.parent.cache_dir, f'spp_island_unifrac_pcoa_df_{spp}_{island}_cropped.p'), 'wb'))
             return spp_unifrac_pcoa_df
 
         def _make_spp_island_braycurtis_pcoa_df_from_scratch(self, island, minor_div_abundance_dict, spp):
@@ -2952,8 +3104,8 @@ eighteen_s_analysis = EighteenSAnalysis()
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_taxa_rel_abund')
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_absolute')
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='med')
-# eighteen_s_analysis.plot_pcoa_spp(distance_method='braycurtis')
-# eighteen_s_analysis.plot_pcoa_spp_island(distance_method='braycurtis')
-eighteen_s_analysis.plot_pcoa_spp_18s_its2(distance_method='braycurtis')
+# eighteen_s_analysis.plot_pcoa_spp(distance_method='unifrac', crop_seqs=True)
+eighteen_s_analysis.plot_pcoa_spp_island(distance_method='unifrac', crop_seqs=True)
+# eighteen_s_analysis.plot_pcoa_spp_18s_its2(distance_method='unifrac', crop_seqs=True)
 # TODO draw up some networks
 
