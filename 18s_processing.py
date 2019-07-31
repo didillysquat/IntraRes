@@ -28,7 +28,7 @@ from skbio.tree import TreeNode
 from skbio.diversity import beta_diversity
 from mpl_toolkits.mplot3d import Axes3D
 from plumbum import local
-import cropping, general
+import cropping, general, fasta2net
 import hashlib
 
 
@@ -62,20 +62,21 @@ class EighteenSAnalysis:
 
         self.blast_nt_db_path = '/home/humebc/phylogeneticSoftware/ncbi-blast-2.6.0+/ntdbdownload'
 
+        # if running on the server we will try these first
         self.symportal_seq_output_relative_path = '/home/humebc/projects/tara/initial_its2_processing/2018-10-21_08-59-37.620726.DIVs.relative.txt'
         self.symportal_profile_output_relative_path = '/home/humebc/projects/tara/initial_its2_processing/34_init_tara_standalone_all_samps_151018_2018-10-21_08-45-56.507454.profiles.relative.txt'
-
-    def plot_pcoa_spp_18s_its2(self):
-        es_its2_plotter = self.E18S_ITS2_PCOA_FIGURE(parent=self)
+        # else look to see if they are in the input directory
+        self.symportal_seq_output_relative_path_input_dir = os.path.join(self.input_dir, '2018-10-21_08-59-37.620726.DIVs.relative.txt')
+        self.symportal_profile_output_relative_path_input_dir = os.path.join(self.input_dir, '34_init_tara_standalone_all_samps_151018_2018-10-21_08-45-56.507454.profiles.relative.txt')
+    def plot_pcoa_spp_18s_its2(self, distance_method='bray_curtis'):
+        es_its2_plotter = self.E18S_ITS2_PCOA_FIGURE(parent=self, distance_method=distance_method)
         es_its2_plotter.plot()
 
     def plot_pcoa_spp(self, distance_method='braycurtis'):
-        # TODO implement Unifrac
         spp_pcoa_plotter = self.PlotPCoASpp(parent=self, distance_method=distance_method)
         spp_pcoa_plotter.plot()
 
     def plot_pcoa_spp_island(self, distance_method='braycurtis'):
-        # TODO implement Unifrac
         spp_island_pcoa_plotter = self.PlotPCoASppIsland(parent=self, distance_method=distance_method)
         spp_island_pcoa_plotter.plot()
 
@@ -156,13 +157,12 @@ class EighteenSAnalysis:
                     spp_unifrac_pcoa_df = pickle.load(
                         open(os.path.join(self.parent.cache_dir, f'spp_unifrac_pcoa_df_{spp}.p'), 'rb'))
                 else:
-                    spp_unifrac_pcoa_df = self._make_spp_unifrac_pcoa_df_from_scratch(
-                        minor_div_abundance_dict, spp)
+                    spp_unifrac_pcoa_df = self._make_spp_unifrac_pcoa_df_from_scratch(spp)
                 spp_unifrac_pcoa_df_dict[spp] = spp_unifrac_pcoa_df
             return spp_unifrac_pcoa_df_dict
 
-        def _make_spp_unifrac_pcoa_df_from_scratch(self, minor_div_abundance_dict, spp):
-            sample_names_of_spp, spp_df = self._get_subset_spp_df_for_unifrac(minor_div_abundance_dict, spp)
+        def _make_spp_unifrac_pcoa_df_from_scratch(self, spp):
+            sample_names_of_spp, spp_df = self._get_subset_spp_df_for_unifrac(spp)
             # perform unifrac
             print('Performing unifrac calculations')
             wu = beta_diversity(
@@ -172,7 +172,7 @@ class EighteenSAnalysis:
             spp_unifrac_pcoa_df = self._do_spp_pcoa_unifrac(sample_names_of_spp, spp, wu)
             return spp_unifrac_pcoa_df
 
-        def _get_subset_spp_df_for_unifrac(self, minor_div_abundance_dict, spp):
+        def _get_subset_spp_df_for_unifrac(self, spp):
             # Get a list of the samples that we should be working with
             sample_names_of_spp = self.parent.coral_info_df_for_figures.loc[
                 self.parent.coral_info_df_for_figures['genus'] == spp.upper()].index.values.tolist()
@@ -181,7 +181,7 @@ class EighteenSAnalysis:
                 sample_names_of_spp.remove('CO0001674')
                 sample_names_of_spp.remove('CO0001669')
             # This is a subset of the main df that contains only the samples of the species in question
-            spp_df = minor_div_abundance_dict.loc[sample_names_of_spp]
+            spp_df = self.abundance_df.loc[sample_names_of_spp]
             spp_df = spp_df.loc[:, (spp_df != 0).any(axis=0)]
             return sample_names_of_spp, spp_df
 
@@ -203,8 +203,10 @@ class EighteenSAnalysis:
             print('This could take some time...')
             if not os.path.exists(self.tree_out_path_unrooted):
                 subprocess.run(
-                    ['iqtree', '-nt', 'AUTO', '-s', f'{self.aligned_fasta_path}'],
+                    ['iqtree', '-nt', 'AUTO', '-m', 'TIM3e+R3', '-s', f'{self.aligned_fasta_path}'],
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            else:
+                print('Tree already exists. Using existing tree.')
             # root the tree
             print('Tree creation complete')
             print('Rooting the tree at midpoint')
@@ -454,11 +456,15 @@ class EighteenSAnalysis:
         """A class  for holding the methods specific to plotting the figure that links the 18S ordinations with the
         zooxs its2 information.
         """
-        def __init__(self, parent):
+        def __init__(self, parent, distance_method):
             EighteenSAnalysis.Generic_PCOA_DIST_Methods.__init__(self, parent)
             EighteenSAnalysis.GenericPlottingMethods.__init__(self)
             self.foo = 'asdf'
-            self.pcoa_df_dict = self._generate_bray_curtis_distance_and_pcoa_spp()
+            self.distance_method = distance_method
+            if self.distance_method == 'braycurtis':
+                self.pcoa_df_dict = self._generate_bray_curtis_distance_and_pcoa_spp()
+            elif self.distance_method == 'unifrac':
+                self.pcoa_df_dict = self._generate_unifrac_distance_and_pcoa_spp()
             self.spp_list = ['Porites', 'Pocillopora', 'Millepora']
             self.marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
 
@@ -471,9 +477,14 @@ class EighteenSAnalysis:
             self._process_div_df()
             self.smp_name_to_smp_id_dict_short = {k.split('_')[0]: v for k, v in self.smp_name_to_smp_id_dict.items()}
 
-            self.colour_dict_type = pickle.load(
-                open('/home/humebc/projects/tara/initial_its2_processing/colour_dict_type.pickle'.format(os.getcwd()),
-                     'rb'))
+            try:
+                self.colour_dict_type = pickle.load(
+                    open('/home/humebc/projects/tara/initial_its2_processing/colour_dict_type.pickle',
+                         'rb'))
+            except FileNotFoundError:
+                self.colour_dict_type = pickle.load(
+                    open(os.path.join(self.parent.input_dir, 'colour_dict_type.pickle'), 'rb'))
+
 
             # These two objects are created in _process_type_df()
             self.sp_output_df_type = None
@@ -589,8 +600,8 @@ class EighteenSAnalysis:
 
             self.fig.show()
 
-            plt.savefig(os.path.join(self.parent.figure_output_dir, 'spp_pcoa_with_its2.png'), dpi=1200)
-            plt.savefig(os.path.join(self.parent.figure_output_dir, 'spp_pcoa_with_its2.svg'))
+            plt.savefig(os.path.join(self.parent.figure_output_dir, f'spp_{self.distance_method}_pcoa_with_its2.png'), dpi=1200)
+            plt.savefig(os.path.join(self.parent.figure_output_dir, f'spp_{self.distance_method}_pcoa_with_its2.svg'))
 
             return
 
@@ -731,13 +742,21 @@ class EighteenSAnalysis:
             self.colour_dict_div = colour_dict_div
 
         def _process_type_df(self):
-            sp_output_df_type = pd.read_csv(self.parent.symportal_profile_output_relative_path, sep='\t', lineterminator='\n',
-                                            skiprows=[0, 1, 2, 3, 5],
-                                            header=None)
+            try:
+                sp_output_df_type = pd.read_csv(self.parent.symportal_profile_output_relative_path, sep='\t', lineterminator='\n',
+                                                skiprows=[0, 1, 2, 3, 5],
+                                                header=None)
+            except FileNotFoundError:
+                sp_output_df_type = pd.read_csv(self.parent.symportal_profile_output_relative_path_input_dir, sep='\t',
+                                                lineterminator='\n',
+                                                skiprows=[0, 1, 2, 3, 5],
+                                                header=None)
+
             # get a list of tups that are the seq names and the abundances zipped together
             type_profile_to_abund_tup_list = [(name, int(abund)) for name, abund in
                                               zip(sp_output_df_type.iloc[1][2:].values.tolist(),
                                                   sp_output_df_type.iloc[0][2:].values.tolist())]
+
             # convert the names that are numbers into int strings rather than float strings.
             int_temp_list = []
             for name_abund_tup in type_profile_to_abund_tup_list:
@@ -775,9 +794,13 @@ class EighteenSAnalysis:
                                                             reverse=True)]
 
         def _process_div_df(self):
-            sp_output_df = pd.read_csv(self.parent.symportal_seq_output_relative_path, sep='\t', lineterminator='\n', header=0,
-                                       index_col=0)
-
+            try:
+                sp_output_df = pd.read_csv(self.parent.symportal_seq_output_relative_path, sep='\t', lineterminator='\n', header=0,
+                                           index_col=0)
+            except FileNotFoundError:
+                sp_output_df = pd.read_csv(self.parent.symportal_seq_output_relative_path_input_dir, sep='\t',
+                                           lineterminator='\n', header=0,
+                                           index_col=0)
             # In order to be able to drop the DIV row at the end and the meta information rows, we should
             # drop all rows that are after the DIV column. We will pass in an index value to the .drop
             # that is called here. To do this we need to work out which index we are working with
@@ -980,8 +1003,8 @@ class EighteenSAnalysis:
 
             fig.show()
             if not is_three_d:
-                plt.savefig(os.path.join(self.parent.figure_output_dir, 'spp_pcoa_with_pc3_pc4.png'), dpi=1200)
-                plt.savefig(os.path.join(self.parent.figure_output_dir, 'spp_pcoa_with_pc3_pc4.svg'))
+                plt.savefig(os.path.join(self.parent.figure_output_dir, f'spp_{self.distance_method}_pcoa_with_pc3_pc4.png'), dpi=1200)
+                plt.savefig(os.path.join(self.parent.figure_output_dir, f'spp_{self.distance_method}_pcoa_with_pc3_pc4.svg'))
 
     class PlotPCoASppIsland(Generic_PCOA_DIST_Methods, GenericPlottingMethods):
 
@@ -999,7 +1022,10 @@ class EighteenSAnalysis:
             """
 
             # For each species get the pcoa df
-            pcoa_df_dict = self._generate_bray_curtis_distance_and_pcoa_spp_and_island()
+            if self.distance_method == 'braycurtis':
+                pcoa_df_dict = self._generate_bray_curtis_distance_and_pcoa_spp_and_island()
+            elif self.distance_method == 'unifrac':
+                pcoa_df_dict = self._generate_unifrac_distance_and_pcoa_spp_and_island()
 
             # setup figure
             spp_list = ['PORITES', 'POCILLOPORA', 'MILLEPORA']
@@ -1065,8 +1091,36 @@ class EighteenSAnalysis:
             self._vert_leg_axis(colour_dict, legend_ax, marker_dict)
 
             fig.show()
-            plt.savefig(os.path.join(self.figure_output_dir, 'spp_island_pcoa.png'), dpi=1200)
-            plt.savefig(os.path.join(self.figure_output_dir, 'spp_island_pcoa.svg'))
+            plt.savefig(os.path.join(self.figure_output_dir, f'spp_island_{self.distance_method}_pcoa.png'), dpi=1200)
+            plt.savefig(os.path.join(self.figure_output_dir, f'spp_island_{self.distance_method}_pcoa.svg'))
+
+        def _generate_unifrac_distance_and_pcoa_spp_and_island(self):
+            if os.path.isfile(os.path.join(self.parent.cache_dir, 'minor_div_abundance_dict.p')):
+                minor_div_abundance_dict = pickle.load(
+                    open(os.path.join(self.parent.cache_dir, 'minor_div_abundance_dict.p'), 'rb'))
+            else:
+                minor_div_abundance_dict = self._generate_minor_div_abundance_dict_from_scratch()
+
+            self._create_df_from_minor_div_dict(minor_div_abundance_dict)
+
+            columns, seq_fasta_list = self._make_all_seq_fasta_and_hash_names()
+
+            self._set_df_cols_as_hashes(columns)
+
+            self._align_seqs(seq_fasta_list)
+
+            self._make_and_root_tree()
+
+            spp_island_unifrac_pcoa_df_dict = {}
+            for spp in ['PORITES', 'POCILLOPORA', 'MILLEPORA']:
+                for island in ['ISLAND06', 'ISLAND10', 'ISLAND15']:
+                    if os.path.isfile(os.path.join(self.cache_dir, f'spp_island_unifrac_pcoa_df_{spp}_{island}.p')):
+                        spp_island_unifrac_pcoa_df = pickle.load(
+                            open(os.path.join(self.cache_dir, f'spp_island_unifrac_pcoa_df_{spp}_{island}.p'), 'rb'))
+                    else:
+                        spp_island_unifrac_pcoa_df = self._make_spp_island_unifrac_pcoa_df_from_scratch(spp, island)
+                    spp_island_unifrac_pcoa_df_dict[f'{spp}_{island}'] = spp_island_unifrac_pcoa_df
+            return spp_island_unifrac_pcoa_df_dict
 
         def _generate_bray_curtis_distance_and_pcoa_spp_and_island(self):
             """Read in the minor div dataframe which should have normalised abundances in them
@@ -1092,29 +1146,64 @@ class EighteenSAnalysis:
                         spp_island_pcoa_df = pickle.load(
                             open(os.path.join(self.cache_dir, f'spp_island_pcoa_df_{spp}_{island}.p'), 'rb'))
                     else:
-                        # Get a list of the samples that we should be working with
-                        sample_names_of_spp = self.coral_info_df_for_figures.loc[
-                            (self.coral_info_df_for_figures['genus'] == spp.upper()) &
-                            (self.coral_info_df_for_figures['island'] == island.upper())].index.values.tolist()
-
-                        # Remove the two porites species from this that seem to be total outliers
-                        if spp == 'PORITES':
-                            if 'CO0001674' in sample_names_of_spp:
-                                sample_names_of_spp.remove('CO0001674')
-                                sample_names_of_spp.remove('CO0001669')
-
-                        spp_island_distance_dict = self._get_spp_island_distance_dict(
-                            minor_div_abundance_dict, sample_names_of_spp, spp, island)
-
-                        distance_out_file = self._make_and_output_distance_file_spp_island(
-                            sample_names_of_spp, spp_island_distance_dict, spp, island)
-
-                        # Feed this into the generate_PCoA_coords method
-                        spp_island_pcoa_df = self._generate_PCoA_coords(distance_out_file, spp)
-                        pickle.dump(spp_island_pcoa_df,
-                                    open(os.path.join(self.cache_dir, f'spp_island_pcoa_df_{spp}_{island}.pickle'), 'wb'))
+                        spp_island_pcoa_df = self._make_spp_island_braycurtis_pcoa_df_from_scratch(island,
+                                                                                                   minor_div_abundance_dict,
+                                                                                                   spp)
                     spp_island_pcoa_df_dict['{}_{}'.format(spp, island)] = spp_island_pcoa_df
             return spp_island_pcoa_df_dict
+
+        def _make_spp_island_unifrac_pcoa_df_from_scratch(self, spp, island):
+            # Get a list of the samples that we should be working with
+            sample_names_of_spp_island = self.coral_info_df_for_figures.loc[
+                (self.coral_info_df_for_figures['genus'] == spp.upper()) &
+                (self.coral_info_df_for_figures['island'] == island.upper())].index.values.tolist()
+            # Remove the two porites species from this that seem to be total outliers
+            if spp == 'PORITES':
+                if 'CO0001674' in sample_names_of_spp_island:
+                    sample_names_of_spp_island.remove('CO0001674')
+                    sample_names_of_spp_island.remove('CO0001669')
+
+            # This is a subset of the main df that contains only the samples of the species in question
+            spp_island_df = self.abundance_df.loc[sample_names_of_spp_island]
+            spp_island_df = spp_island_df.loc[:, (spp_island_df != 0).any(axis=0)]
+
+            # perform unifrac
+            print('Performing unifrac calculations')
+            wu = beta_diversity(
+                metric='weighted_unifrac', counts=spp_island_df.to_numpy(),
+                ids=[str(_) for _ in list(spp_island_df.index)],
+                tree=self.rooted_tree, otu_ids=[str(_) for _ in list(spp_island_df.columns)])
+
+            # compute the pcoa
+            pcoa_output = pcoa(wu.data)
+            pcoa_output.samples['sample'] = sample_names_of_spp_island
+            spp_unifrac_pcoa_df = pcoa_output.samples.set_index('sample')
+            # now add the variance explained as a final row to the renamed_dataframe
+            spp_unifrac_pcoa_df = spp_unifrac_pcoa_df.append(
+                pcoa_output.proportion_explained.rename('proportion_explained'))
+            pickle.dump(spp_unifrac_pcoa_df,
+                        open(os.path.join(self.parent.cache_dir, f'spp_island_unifrac_pcoa_df_{spp}_{island}.p'), 'wb'))
+            return spp_unifrac_pcoa_df
+
+        def _make_spp_island_braycurtis_pcoa_df_from_scratch(self, island, minor_div_abundance_dict, spp):
+            # Get a list of the samples that we should be working with
+            sample_names_of_spp_island = self.coral_info_df_for_figures.loc[
+                (self.coral_info_df_for_figures['genus'] == spp.upper()) &
+                (self.coral_info_df_for_figures['island'] == island.upper())].index.values.tolist()
+            # Remove the two porites species from this that seem to be total outliers
+            if spp == 'PORITES':
+                if 'CO0001674' in sample_names_of_spp_island:
+                    sample_names_of_spp_island.remove('CO0001674')
+                    sample_names_of_spp_island.remove('CO0001669')
+            spp_island_distance_dict = self._get_spp_island_distance_dict(
+                minor_div_abundance_dict, sample_names_of_spp_island, spp, island)
+            distance_out_file = self._make_and_output_distance_file_spp_island(
+                sample_names_of_spp_island, spp_island_distance_dict, spp, island)
+            # Feed this into the generate_PCoA_coords method
+            spp_island_pcoa_df = self._generate_PCoA_coords(distance_out_file, spp)
+            pickle.dump(spp_island_pcoa_df,
+                        open(os.path.join(self.cache_dir, f'spp_island_pcoa_df_{spp}_{island}.pickle'), 'wb'))
+            return spp_island_pcoa_df
 
         def _make_and_output_distance_file_spp_island(self, sample_names_of_spp, spp_island_distance_dict, spp, island):
             # Generate the distance out file from this dictionary
@@ -2863,7 +2952,8 @@ eighteen_s_analysis = EighteenSAnalysis()
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_taxa_rel_abund')
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_absolute')
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='med')
-eighteen_s_analysis.plot_pcoa_spp(distance_method='unifrac')
-# eighteen_s_analysis.plot_pcoa_spp_island()
-# eighteen_s_analysis.plot_pcoa_spp_18s_its2()
+# eighteen_s_analysis.plot_pcoa_spp(distance_method='braycurtis')
+# eighteen_s_analysis.plot_pcoa_spp_island(distance_method='braycurtis')
+eighteen_s_analysis.plot_pcoa_spp_18s_its2(distance_method='braycurtis')
+# TODO draw up some networks
 
