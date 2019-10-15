@@ -5,7 +5,7 @@ import pickle
 from matplotlib.patches import Rectangle
 from matplotlib.collections import PatchCollection
 import matplotlib as mpl
-mpl.use('Agg')
+mpl.use('TkAgg')
 import matplotlib.pyplot as plt
 plt.ioff()
 import matplotlib.pyplot as plt
@@ -69,6 +69,209 @@ class EighteenSAnalysis:
         # else look to see if they are in the input directory
         self.symportal_seq_output_relative_path_input_dir = os.path.join(self.input_dir, '2018-10-21_08-59-37.620726.DIVs.relative.txt')
         self.symportal_profile_output_relative_path_input_dir = os.path.join(self.input_dir, '34_init_tara_standalone_all_samps_151018_2018-10-21_08-45-56.507454.profiles.relative.txt')
+
+    def correlate_18S_clustering_to_snp_clustering(self, spp, distance_method="braycurtis"):
+        """Didier has produced SNP based clusters for Pocillopora. He used 55 genes to start with
+        and has found that they cluster quite nicely into 3 clusters. Here, we want to look at the distances
+        we have recovered between the coral colonies of the given species using the 18S amplicons. Currently
+        we do not have any distances for the SNPs we only have cluster labels e.g. 1,2,3. SO.. for the timebeing
+        we will perform K means clustering on our distances, find the optimum K and then compare the correlation
+        between our labels and the SNP labels. To do this we will use the KMeans class from sklearn.cluster.
+
+
+        To run this we will require that the distances have already been created and these will be checked for.
+        We will allow a choice of distances methods either braycurtis or unifrac. We will only work with the
+        corpped unifrac distances. Because we only have the snp cluster labels for pocillopora we will have a species
+        argument to this function.
+
+        Top half of the plot will be the 8 k values and colour coded clustering and on the right will be an elbow
+        plot.
+        Below we will have the k3 with colour containing all samples, and then the k3 with only samples that
+        are in the snp and this one will have annotations for the clusters assigned by snp"""
+        from sklearn.cluster import KMeans
+        from scipy.spatial.distance import cdist
+        import numpy as np
+        if distance_method == 'braycurtis':
+            dist_path = os.path.join(self.cache_dir, f'spp_pcoa_df_{spp}.p')
+            if os.path.isfile(dist_path):
+                spp_pcoa_df = pickle.load(open(dist_path, 'rb'))
+            else:
+                print(f'The file {dist_path} cannot be found. Have you already generated the distance file?')
+                sys.exit()
+        elif distance_method == 'unifrac':
+            dist_path = os.path.join(self.cache_dir, f'spp_unifrac_pcoa_df_{spp}_cropped.p')
+            if os.path.isfile(dist_path):
+                spp_pcoa_df = pickle.load(open(dist_path, 'rb'))
+            else:
+                print(f'The file {dist_path} cannot be found. Have you already generated the distance file?')
+                sys.exit()
+
+        # DataFrame that will be just the PC1 and PC2
+        spp_pcoa_df = spp_pcoa_df.iloc[:-1, :2]
+        index_list = spp_pcoa_df.index.tolist()
+
+        marker_dict = {'ISLAND06': '^', 'ISLAND10': 'o', 'ISLAND15': 's'}
+        marker_list = [marker_dict[self.coral_info_df_for_figures.loc[smp, 'island']] for smp in
+                       index_list]
+        # Get the SNP labels
+        snp_labels = pd.read_csv(os.path.join(self.input_dir, 'pocillopora_snp_clusters.csv'))
+        snp_labels.index = ['CO' + val.split('-')[-1] for val in snp_labels['code pangea'].values.tolist()]
+        snp_labels = snp_labels.iloc[:, -1]
+
+
+
+        # first we will make the elbow plot. Do k from 1 --> 8
+        # list that will hold the average distance for each of the ks used
+        average_dist = []
+
+        # dict that will hold the labels annotations for the corals
+        annotations_dict = {}
+
+        # dict that will hold the centroids
+        centroids_dict = {}
+
+        k = range(1,9)
+        for i in k:
+
+            rand = np.random.RandomState(0)
+            kmeans = KMeans(n_clusters=i, max_iter=3000, random_state=rand)
+            kmeans.fit(spp_pcoa_df)
+            labels = [lab + 1 for lab in kmeans.predict(spp_pcoa_df)]
+            centroids = kmeans.cluster_centers_
+            centroids_dict[i] = centroids
+            # calculate euclidean distances
+            av_eucl_dist = sum(np.min(cdist(list(zip(spp_pcoa_df.iloc[:,0], spp_pcoa_df.iloc[:,0])), centroids, 'euclidean'), axis=1))/len(labels)
+            average_dist.append(av_eucl_dist)
+
+            annotations_dict[i] = labels
+            # Uncomment for manual label association according to the visual groupings.
+            # if i==3 and distance_method == 'unifrac':
+            #     # try manually assigning the labels according to the visual groups
+            #     labels = []
+            #     for samp_name in index_list:
+            #         x = spp_pcoa_df.at[samp_name, 'PC1']
+            #         y = spp_pcoa_df.at[samp_name, 'PC2']
+            #         if y < -0.08:
+            #             labels.append(0)
+            #         elif y > -0.08 and x < 0.03:
+            #             labels.append(1)
+            #         else:
+            #             labels.append(2)
+            #     annotations_dict[i] = labels
+            # Uncomment for the random association of labels
+
+
+
+        # we don't actually know which group corresponds to which.
+        # i.e. is the snp group 1 the same as our group 1? Apparently not
+        # we're going to need to try a couple of different translations
+        # we will cycle through each of the mapping dicts and take the one that give us the best result
+        mapping_dicts = [{1:1, 2:2, 3:3}, {1: 2, 2: 3, 3: 1}, {1: 3, 2: 1, 3: 2}, {1:1, 2:3, 3:2}, {1:3, 2:2, 3:1}, {1:2, 2:3, 3:3}]
+        # snp_to_18s_map = {1:1, 2:2, 3:3} # This gave us match of 0.07
+        # snp_to_18s_map = {1: 2, 2: 3, 3: 1} # this gave us .26
+        # snp_to_18s_map = {1: 3, 2: 1, 3: 2} # this gave us .63
+
+
+        # now plot up the different scatters for the ks with labels.
+        colmap = {1: 'r', 2: 'g', 3: 'b', 4:'c', 5:'y', 6:'k', 7:'m', 8:'0.5'}
+        fig = plt.figure(figsize=(15, 10))
+        gs = plt.GridSpec(3, 6, figure=fig, height_ratios=[1, 1, 2],
+                               width_ratios=[1, 1, 1, 1, 1, 1])
+        # we can have several axes lists so that we can populate them one by one
+        # first lets make the pcoa p lot axes list
+        pcoa_axes_list = []
+        for j in range(2):
+            for i in range(4):
+                pcoa_axes_list.append(plt.subplot(gs[j, i]))
+        elbow_ax = plt.subplot(gs[:2, 4:])
+        k3_all_ax = plt.subplot(gs[2:3, :2])
+        k3_all_ax.set_title("All colonies\nk=3; shape=island; color=18S cluster")
+        k3_snp_ax = plt.subplot(gs[2:3, 2:4])
+        k3_snp_ax.set_title("only colonies w/ SNP info\nk=3; shape=island; color=18S cluster")
+        k3_snp_anntated_ax = plt.subplot(gs[2:3, 4:6])
+        k3_snp_anntated_ax.set_title("only colonies w/ SNP info\nk=3; number=SNP cluster; color=18S cluster")
+        # so that we can later use the correct dict to put arrows for the mis-matches onto the chart
+        correct_mapping_dict = None
+        for i in range(1,9):
+            colors = [colmap[lab] for lab in annotations_dict[i]]
+            for x_val, y_val, col, mark in zip(spp_pcoa_df["PC1"], spp_pcoa_df["PC2"], colors, marker_list):
+                pcoa_axes_list[i-1].scatter(x_val, y_val, color=col, marker=mark, alpha=0.5, edgecolor='k')
+            for idx, centroid in enumerate(centroids_dict[i]):
+                pcoa_axes_list[i-1].scatter(*centroid, color=colmap[idx + 1], marker='+', edgecolor='k')
+            # Annotate the plot with the k value
+            # and if we are working at k=3 the cluster agreement to the snps as well
+            if i == 3:
+                for smp_name, x_val, y_val, col, mark in zip(index_list, spp_pcoa_df["PC1"], spp_pcoa_df["PC2"], colors, marker_list):
+                    k3_all_ax.scatter(x_val, y_val, color=col, marker=mark, alpha=0.5, edgecolor='k')
+                    if smp_name in snp_labels.index:
+                        k3_snp_ax.scatter(x_val, y_val, color=col, marker=mark, alpha=0.5, edgecolor='k')
+                        k3_snp_anntated_ax.scatter(x_val, y_val, color=col, marker=f'${str(snp_labels[smp_name])}$', edgecolor=col)
+                for idx, centroid in enumerate(centroids_dict[i]):
+                    k3_all_ax.scatter(*centroid, color=colmap[idx + 1], marker='+', edgecolor='k')
+                    k3_snp_ax.scatter(*centroid, color=colmap[idx + 1], marker='+', edgecolor='k')
+                    # fix the snp axes so that they exactly match the all plot
+                    k3_snp_ax.set_xlim(k3_all_ax.get_xlim())
+                    k3_snp_ax.set_ylim(k3_all_ax.get_ylim())
+                    k3_snp_anntated_ax.set_xlim(k3_all_ax.get_xlim())
+                    k3_snp_anntated_ax.set_ylim(k3_all_ax.get_ylim())
+
+
+                agree_list = []
+                # Calculate snp agreement
+                # we do this for each of the mapping dictionaries of the snp_to_18s_groups and take the largest
+                # agree value to annotate with
+                max_agree = 0
+                for j in range(len(mapping_dicts)):
+                    agree = 0
+                    for idx, smp_name in enumerate(index_list):
+                        if smp_name in snp_labels:
+                            if mapping_dicts[j][snp_labels[smp_name]] == annotations_dict[i][idx]:
+                                agree += 1
+                    agree = agree / len(snp_labels)
+                    agree_list.append(agree)
+                    if agree > max_agree:
+                        max_agree = agree
+                        correct_mapping_dict = mapping_dicts[j]
+                pcoa_axes_list[i - 1].set_title(f'k={i}:snp={max_agree:.2f}')
+            else:
+                pcoa_axes_list[i - 1].set_title(f'k={i}')
+
+        # create a df so that we can just visualise the correct vs the wrong
+        df = pd.DataFrame({
+            "snp":[snp_labels[smp_name] for smp_name in index_list if smp_name in snp_labels],
+            "18s":[lab for lab, smp_name in zip(annotations_dict[3], index_list) if smp_name in snp_labels.index]},
+            index = [smp_name for smp_name in index_list if smp_name in snp_labels.index])
+
+        # now that we have the correect mapping dict identified we can use this to put arrows onto the
+        # snp annotations plot
+        wrong = 0
+        for sample_name, label in snp_labels.iteritems():
+            if int(correct_mapping_dict[label]) != int(annotations_dict[3][index_list.index(sample_name)]):
+                # Then this was a mismatch and we should add an arrow
+                wrong +=1
+                end_x = spp_pcoa_df.at[sample_name, 'PC1']
+                end_y = spp_pcoa_df.at[sample_name, 'PC2']
+                dx = 0.03
+                dy = 0.03
+                start_x = end_x - dx
+                start_y = end_y - dy
+                k3_snp_anntated_ax.arrow(start_x, start_y, dx*0.6, dy*0.6, head_width=0.01, head_length=0.01, fc='k', ec='k')
+        wrong_perc = wrong/len(snp_labels)
+
+        # elbow plot
+        elbow_ax.plot(k, average_dist, 'kx-')
+        elbow_ax.set_xlabel('k')
+        elbow_ax.set_ylabel('Average distance to centroid')
+        elbow_ax.set_title('The Elbow Method showing the optimal k')
+
+        plt.tight_layout()
+
+        plt.savefig(os.path.join(self.figure_output_dir, f'{spp}_{distance_method}_kmeans_clustering.png'), dpi=1200)
+        plt.savefig(os.path.join(self.figure_output_dir, f'{spp}_{distance_method}_kmeans_clustering.svg'))
+        plt.savefig(os.path.join(self.figure_output_dir, f'{spp}_{distance_method}_kmeans_clustering.pdf'))
+
+        foo = 'bar'
+
     def plot_pcoa_spp_18s_its2(self, distance_method='bray_curtis', crop_seqs=True):
         es_its2_plotter = self.E18S_ITS2_PCOA_FIGURE(parent=self, distance_method=distance_method, crop_seqs=crop_seqs)
         es_its2_plotter.plot()
@@ -140,26 +343,7 @@ class EighteenSAnalysis:
             be able to use the same tree for the other unifrac work we do.
             """
 
-            if os.path.isfile(os.path.join(self.parent.cache_dir, 'minor_div_abundance_dict.p')):
-                minor_div_abundance_dict = pickle.load(
-                    open(os.path.join(self.parent.cache_dir, 'minor_div_abundance_dict.p'), 'rb'))
-            else:
-                minor_div_abundance_dict = self._generate_minor_div_abundance_dict_from_scratch()
-
-            self._create_df_from_minor_div_dict(minor_div_abundance_dict)
-
-            columns, seq_fasta_list = self._make_all_seq_fasta_and_hash_names()
-
-            self._set_df_cols_as_hashes(columns)
-
-            self._align_seqs(seq_fasta_list)
-
-            if self.crop_seqs:
-                self._crop_and_consolidate()
-
-                self._make_and_root_tree_cropped()
-            else:
-                self._make_and_root_tree()
+            self._do_unifrac_dependent_calcs()
 
             spp_unifrac_pcoa_df_dict = {}
             for spp in ['Porites', 'Pocillopora', 'Millepora']:
@@ -168,15 +352,34 @@ class EighteenSAnalysis:
                         spp_unifrac_pcoa_df = pickle.load(
                             open(os.path.join(self.parent.cache_dir, f'spp_unifrac_pcoa_df_{spp}.p'), 'rb'))
                     else:
+                        self._do_unifrac_dependent_calcs()
                         spp_unifrac_pcoa_df = self._make_spp_unifrac_pcoa_df_from_scratch(spp)
                 else:
                     if os.path.isfile(os.path.join(self.parent.cache_dir, f'spp_unifrac_pcoa_df_{spp}_cropped.p')):
                         spp_unifrac_pcoa_df = pickle.load(
                             open(os.path.join(self.parent.cache_dir, f'spp_unifrac_pcoa_df_{spp}_cropped.p'), 'rb'))
                     else:
+                        self._do_unifrac_dependent_calcs()
                         spp_unifrac_pcoa_df = self._make_spp_unifrac_pcoa_df_from_scratch(spp)
                 spp_unifrac_pcoa_df_dict[spp] = spp_unifrac_pcoa_df
             return spp_unifrac_pcoa_df_dict
+
+        def _do_unifrac_dependent_calcs(self):
+            if os.path.isfile(os.path.join(self.parent.cache_dir, 'minor_div_abundance_dict.p')):
+                minor_div_abundance_dict = pickle.load(
+                    open(os.path.join(self.parent.cache_dir, 'minor_div_abundance_dict.p'), 'rb'))
+            else:
+                minor_div_abundance_dict = self._generate_minor_div_abundance_dict_from_scratch()
+            self._create_df_from_minor_div_dict(minor_div_abundance_dict)
+            columns, seq_fasta_list = self._make_all_seq_fasta_and_hash_names()
+            self._set_df_cols_as_hashes(columns)
+            self._align_seqs(seq_fasta_list)
+            if self.crop_seqs:
+                self._crop_and_consolidate()
+
+                self._make_and_root_tree_cropped()
+            else:
+                self._make_and_root_tree()
 
         def _crop_and_consolidate(self):
             self._crop_alignment()
@@ -267,6 +470,7 @@ class EighteenSAnalysis:
         def _do_spp_pcoa_unifrac(self, sample_names_of_spp, spp, wu):
             # compute the pcoa
             pcoa_output = pcoa(wu.data)
+            self._rescale_pcoa(pcoa_output)
             pcoa_output.samples['sample'] = sample_names_of_spp
             spp_unifrac_pcoa_df = pcoa_output.samples.set_index('sample')
             # now add the variance explained as a final row to the renamed_dataframe
@@ -280,6 +484,36 @@ class EighteenSAnalysis:
                 pickle.dump(spp_unifrac_pcoa_df,
                             open(os.path.join(self.parent.cache_dir, f'spp_unifrac_pcoa_df_{spp}_cropped.p'), 'wb'))
             return spp_unifrac_pcoa_df
+
+        def _rescale_pcoa(self, pcoa_output):
+            # work through the magnitudes of order and see what the bigest scaler we can work with is
+            # whilst still remaining below 1
+            query = 0.1
+            scaler = 10
+            while 1:
+                if pcoa_output.samples.max().max() > query:
+                    # then we cannot multiply by the scaler
+                    # revert back and break
+                    scaler /= 10
+                    break
+                else:
+                    # then we can safely multiply by the scaler
+                    # increase by order of magnitude and test again
+                    # we also need to test the negative if it is negative
+                    min_val = pcoa_output.samples.min().min()
+                    if min_val < 0:
+                        if min_val > (-1 * query):
+                            scaler *= 10
+                            query /= 10
+                        else:
+                            scaler /= 10
+                            break
+                    else:
+                        scaler *= 10
+                        query /= 10
+            # now scale the df by the scaler unless it is 1
+            if scaler != 1:
+                pcoa_output.samples = pcoa_output.samples * scaler
 
         def _make_and_root_tree(self):
             # make the tree
@@ -354,13 +588,6 @@ class EighteenSAnalysis:
             collection of the sequences.
             """
 
-            if os.path.isfile(os.path.join(self.parent.cache_dir, 'minor_div_abundance_dict.p')):
-                minor_div_abundance_dict = pickle.load(
-                    open(os.path.join(self.parent.cache_dir, 'minor_div_abundance_dict.p'), 'rb'))
-
-            else:
-                minor_div_abundance_dict = self._generate_minor_div_abundance_dict_from_scratch()
-
             # For each of the spp.
             spp_pcoa_df_dict = {}
             for spp in ['Porites', 'Pocillopora', 'Millepora']:
@@ -375,6 +602,13 @@ class EighteenSAnalysis:
                     if spp == 'Porites':
                         sample_names_of_spp.remove('CO0001674')
                         sample_names_of_spp.remove('CO0001669')
+
+                    if os.path.isfile(os.path.join(self.parent.cache_dir, 'minor_div_abundance_dict.p')):
+                        minor_div_abundance_dict = pickle.load(
+                            open(os.path.join(self.parent.cache_dir, 'minor_div_abundance_dict.p'), 'rb'))
+
+                    else:
+                        minor_div_abundance_dict = self._generate_minor_div_abundance_dict_from_scratch()
 
                     spp_distance_dict = self._get_spp_sample_distance_dict(minor_div_abundance_dict,
                                                                            sample_names_of_spp, spp)
@@ -1322,6 +1556,7 @@ class EighteenSAnalysis:
 
             # compute the pcoa
             pcoa_output = pcoa(wu.data)
+            self._rescale_pcoa(pcoa_output)
             pcoa_output.samples['sample'] = sample_names_of_spp_island
             spp_unifrac_pcoa_df = pcoa_output.samples.set_index('sample')
             # now add the variance explained as a final row to the renamed_dataframe
@@ -1336,6 +1571,36 @@ class EighteenSAnalysis:
                             open(os.path.join(
                                 self.parent.cache_dir, f'spp_island_unifrac_pcoa_df_{spp}_{island}_cropped.p'), 'wb'))
             return spp_unifrac_pcoa_df
+
+        def _rescale_pcoa(self, pcoa_output):
+            # work through the magnitudes of order and see what the bigest scaler we can work with is
+            # whilst still remaining below 1
+            query = 0.1
+            scaler = 10
+            while 1:
+                if pcoa_output.samples.max().max() > query:
+                    # then we cannot multiply by the scaler
+                    # revert back and break
+                    scaler /= 10
+                    break
+                else:
+                    # then we can safely multiply by the scaler
+                    # increase by order of magnitude and test again
+                    # we also need to test the negative if it is negative
+                    min_val = pcoa_output.samples.min().min()
+                    if min_val < 0:
+                        if min_val > (-1 * query):
+                            scaler *= 10
+                            query /= 10
+                        else:
+                            scaler /= 10
+                            break
+                    else:
+                        scaler *= 10
+                        query /= 10
+            # now scale the df by the scaler unless it is 1
+            if scaler != 1:
+                pcoa_output.samples = pcoa_output.samples * scaler
 
         def _make_spp_island_braycurtis_pcoa_df_from_scratch(self, island, minor_div_abundance_dict, spp):
             # Get a list of the samples that we should be working with
@@ -3105,7 +3370,8 @@ eighteen_s_analysis = EighteenSAnalysis()
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_absolute')
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='med')
 # eighteen_s_analysis.plot_pcoa_spp(distance_method='unifrac', crop_seqs=True)
-eighteen_s_analysis.plot_pcoa_spp_island(distance_method='unifrac', crop_seqs=True)
+# eighteen_s_analysis.plot_pcoa_spp_island(distance_method='unifrac', crop_seqs=True)
 # eighteen_s_analysis.plot_pcoa_spp_18s_its2(distance_method='unifrac', crop_seqs=True)
+eighteen_s_analysis.correlate_18S_clustering_to_snp_clustering(distance_method='unifrac', spp='pocillopora')
 # TODO draw up some networks
 
