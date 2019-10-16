@@ -197,7 +197,11 @@ class EighteenSAnalysis:
             for x_val, y_val, col, mark in zip(spp_pcoa_df["PC1"], spp_pcoa_df["PC2"], colors, marker_list):
                 pcoa_axes_list[i-1].scatter(x_val, y_val, color=col, marker=mark, alpha=0.5, edgecolor='k')
             for idx, centroid in enumerate(centroids_dict[i]):
-                pcoa_axes_list[i-1].scatter(*centroid, color=colmap[idx + 1], marker='+', edgecolor='k')
+                # xmin, xmax = pcoa_axes_list[i -1].get_xlim()
+                # ymin, ymax = pcoa_axes_list[i-1].get_ylim()
+                pcoa_axes_list[i - 1].axhline(y=centroid[1], xmin=0, xmax=1, c=colmap[idx + 1], lw=0.5)
+                pcoa_axes_list[i - 1].axvline(x=centroid[0], ymin=0, ymax=1, c=colmap[idx + 1], lw=0.5)
+                # pcoa_axes_list[i-1].scatter(*centroid, color=colmap[idx + 1], marker='+', edgecolor='k', s=50)
             # Annotate the plot with the k value
             # and if we are working at k=3 the cluster agreement to the snps as well
             if i == 3:
@@ -207,13 +211,17 @@ class EighteenSAnalysis:
                         k3_snp_ax.scatter(x_val, y_val, color=col, marker=mark, alpha=0.5, edgecolor='k')
                         k3_snp_anntated_ax.scatter(x_val, y_val, color=col, marker=f'${str(snp_labels[smp_name])}$', edgecolor=col)
                 for idx, centroid in enumerate(centroids_dict[i]):
-                    k3_all_ax.scatter(*centroid, color=colmap[idx + 1], marker='+', edgecolor='k')
-                    k3_snp_ax.scatter(*centroid, color=colmap[idx + 1], marker='+', edgecolor='k')
+                    # k3_all_ax.scatter(*centroid, color=colmap[idx + 1], marker='+', edgecolor='k')
+                    # k3_snp_ax.scatter(*centroid, color=colmap[idx + 1], marker='+', edgecolor='k')
                     # fix the snp axes so that they exactly match the all plot
                     k3_snp_ax.set_xlim(k3_all_ax.get_xlim())
                     k3_snp_ax.set_ylim(k3_all_ax.get_ylim())
                     k3_snp_anntated_ax.set_xlim(k3_all_ax.get_xlim())
                     k3_snp_anntated_ax.set_ylim(k3_all_ax.get_ylim())
+                    k3_all_ax.axhline(y=centroid[1], xmin=0, xmax=1, c=colmap[idx + 1], lw=0.5)
+                    k3_all_ax.axvline(x=centroid[0], ymin=0, ymax=1, c=colmap[idx + 1], lw=0.5)
+                    k3_snp_ax.axhline(y=centroid[1], xmin=0, xmax=1, c=colmap[idx + 1], lw=0.5)
+                    k3_snp_ax.axvline(x=centroid[0], ymin=0, ymax=1, c=colmap[idx + 1], lw=0.5)
 
 
                 agree_list = []
@@ -3369,9 +3377,9 @@ eighteen_s_analysis = EighteenSAnalysis()
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_taxa_rel_abund')
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_absolute')
 # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='med')
-# eighteen_s_analysis.plot_pcoa_spp(distance_method='unifrac', crop_seqs=True)
+eighteen_s_analysis.plot_pcoa_spp(distance_method='braycurtis', crop_seqs=True)
 # eighteen_s_analysis.plot_pcoa_spp_island(distance_method='unifrac', crop_seqs=True)
 # eighteen_s_analysis.plot_pcoa_spp_18s_its2(distance_method='unifrac', crop_seqs=True)
-eighteen_s_analysis.correlate_18S_clustering_to_snp_clustering(distance_method='unifrac', spp='pocillopora')
+eighteen_s_analysis.correlate_18S_clustering_to_snp_clustering(distance_method='braycurtis', spp='pocillopora')
 # TODO draw up some networks
 
