@@ -33,6 +33,7 @@ from cropping import Cropper
 import hashlib
 from Bio import SeqIO
 from math import sqrt
+import scipy.cluster.hierarchy
 
 class EighteenSAnalysis:
     def __init__(self):
@@ -72,6 +73,72 @@ class EighteenSAnalysis:
         # else look to see if they are in the input directory
         self.symportal_seq_output_relative_path_input_dir = os.path.join(self.input_dir, '2018-10-21_08-59-37.620726.DIVs.relative.txt')
         self.symportal_profile_output_relative_path_input_dir = os.path.join(self.input_dir, '34_init_tara_standalone_all_samps_151018_2018-10-21_08-45-56.507454.profiles.relative.txt')
+        self.snp_nei_dist_input_path = os.path.join(self.input_dir, 'neidist_tri_LD02.csv')
+        self.snp_provesti_dist_input_path = os.path.join(self.input_dir, 'provesti_tri_LD02.csv')
+        self.snp_coname_to_human_readable_name_dict = None
+        self.nei_dist_df = self._generate_nei_dist_df()
+        self.prov_dist_df = self._generate_prov_dist_df()
+        # Read in the pocillopora unifrac nosqrt between sample distances that have already been calculated
+        self.poc_unifrac_nosqrt_btwn_sample_dist_df, self.poc_unifrac_nosqrt_btwn_sample_dist_only_snp_samples_df = self._generate_poc_unifrac_nosqrt_btwn_sample_dist_df()
+
+    def _generate_poc_unifrac_nosqrt_btwn_sample_dist_df(self):
+        with open(os.path.join(self.dist_output_dir, 'unifrac_within_sample_spp_distances_Pocillopora_cropped_nosqrt.dist'), 'r') as f:
+            data = [line.rstrip().split(',') for line in f.readlines()]
+        columns = [l[0] for l in data]
+        data = [l[1:] for l in data]
+        df = pd.DataFrame(data=data, index=columns, columns=columns, dtype=float)
+        cols_rows_to_drop = [ind for ind in df.index.values if ind not in self.snp_coname_to_human_readable_name_dict]
+        df_snp_samples_only = df.drop(columns=cols_rows_to_drop)
+        df_snp_samples_only = df_snp_samples_only.drop(index=cols_rows_to_drop)
+        return df, df_snp_samples_only
+
+    def _generate_nei_dist_df(self):
+        # make a df that will have the site and sample name as header and index and the distances as
+        # cells
+        nei_df = pd.read_csv(filepath_or_buffer=self.snp_nei_dist_input_path, sep=',', skiprows=1)
+        self.snp_coname_to_human_readable_name_dict = {t_name.split('_')[1].replace('-',''):'_'.join(i_name.split('_')[:3]) for t_name, i_name in zip(nei_df.iloc[:,0].values, nei_df.iloc[:,1].values)}
+        nei_df.index = ['_'.join(val.split('_')[:3]) for val in nei_df.iloc[:,1].values]
+        nei_df.drop(columns=[list(nei_df)[0], list(nei_df)[1]], inplace=True)
+        nei_df.columns = nei_df.index
+        return nei_df
+
+    def _generate_prov_dist_df(self):
+        # make a df that will have the site and sample name as header and index and the distances as
+        # cells
+        prov_df = pd.read_csv(filepath_or_buffer=self.snp_provesti_dist_input_path, sep=';', skiprows=1)
+        prov_df.index = ['_'.join(val.split('_')[:3]) for val in prov_df.iloc[:, 1].values]
+        prov_df.drop(columns=[list(prov_df)[0], list(prov_df)[1]], inplace=True)
+        prov_df.columns = prov_df.index
+        return prov_df
+
+    def plot_snp_dendrogram(self):
+        # create the fig and ax array object
+        fig, ax_arr = plt.subplots(nrows=1, ncols=3, figsize=(15,5))
+        self._make_dendrogram_figure(ax=ax_arr[0], dist_df=self.nei_dist_df)
+        self._make_dendrogram_figure(ax=ax_arr[1], dist_df=self.prov_dist_df)
+        self._make_dendrogram_figure(ax=ax_arr[2], dist_df=self.poc_unifrac_nosqrt_btwn_sample_dist_only_snp_samples_df, labels=[self.snp_coname_to_human_readable_name_dict[co_val] for co_val in self.poc_unifrac_nosqrt_btwn_sample_dist_only_snp_samples_df.index.values])
+        # Read in the unifrac nosqrt between sample distances that have already been calculated
+
+
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.figure_output_dir, 'snp_dendros.svg'), dpi=1200)
+        plt.savefig(os.path.join(self.figure_output_dir, 'snp_dendros.png'), dpi=1200)
+        foo = 'bar'
+
+    def _make_dendrogram_figure(self,ax, dist_df, plot_labels=True, labels=None):
+        """This is a method specifically aimed at plotting a single dendrogram and is used
+        inside the methods that put larger figures together e.g. make_dendogram """
+        condensed_dist = scipy.spatial.distance.squareform(dist_df)
+        # this creates the linkage df that will be passed into the dendogram_sp function
+        linkage = scipy.cluster.hierarchy.linkage(y=condensed_dist, optimal_ordering=True)
+        colors = {}
+        for i in range(len(dist_df.index.values.tolist())):
+            colors[i] = 'red'
+        if not labels:
+            dendro = scipy.cluster.hierarchy.dendrogram(Z=linkage, ax=ax, orientation='top', labels=dist_df.index.values.tolist(), link_color_func=lambda k: 'black', leaf_rotation=90)
+        else:
+            dendro = scipy.cluster.hierarchy.dendrogram(Z=linkage, ax=ax, orientation='top', labels=labels, link_color_func=lambda k: 'black', leaf_rotation=90)
+        foo = 'bar'
 
     def correlate_18S_clustering_to_snp_clustering(self, spp, distance_method="braycurtis", square_root_trans=False):
         """Didier has produced SNP based clusters for Pocillopora. He used 55 genes to start with
@@ -580,8 +647,9 @@ class EighteenSAnalysis:
             cropped_unaligned_fasta_no_gaps, new_hash_to_old_hash_dd = self._get_new_to_old_hash_dict_and_reunique_fasta(
                 unaligned_cropped_seq_collection)
             self._reunique_abundance_df(new_hash_to_old_hash_dd)
+            # Write out the abundance df that will correlate to the fasta here.
             self._write_out_fasta(cropped_unaligned_fasta_no_gaps)
-            # now align it
+            # Now align it
             if not os.path.exists(self.aligned_fasta_path_cropped):
                 general.mafft_align_fasta(
                     input_path=self.unaligned_fasta_path_cropped,
@@ -589,6 +657,7 @@ class EighteenSAnalysis:
                     num_proc=7)
             sequential_fasta = general.convert_interleaved_to_sequencial_fasta(
                 general.read_defined_file_to_list(self.aligned_fasta_path_cropped))
+            # this is the fasta that will allow us to identify the sequences of the hash names
             general.write_list_to_destination(self.aligned_fasta_path_cropped, sequential_fasta)
 
         def _crop_and_consolidate_w_non_normalised_sqrt(self):
@@ -828,6 +897,8 @@ class EighteenSAnalysis:
         def _create_df_from_minor_div_dict(self, minor_div_abundance_dict):
             self.abundance_df = pd.DataFrame.from_dict(minor_div_abundance_dict, orient='index')
             self.abundance_df[pd.isna(self.abundance_df)] = 0
+            # write this out for Ryan
+            foo = "bar"
 
         def _generate_bray_curtis_distance_and_pcoa_spp_w_10000_normalised_sqrt(self):
             """
@@ -3767,6 +3838,7 @@ if __name__ == "__main__":
     #NB When applying the sqrt transformation, the correlation between the SNP and 18S clusters was not as good.
     # 78% agreement vs 96%. That being said, the clustering did appear tighter with the sqrt.
     eighteen_s_analysis = EighteenSAnalysis()
+    eighteen_s_analysis.plot_snp_dendrogram()
     # eighteen_s_analysis.do_qc()
     # eighteen_s_analysis.do_taxa_annotations()
     # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='full')
@@ -3774,7 +3846,7 @@ if __name__ == "__main__":
     # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_taxa_rel_abund')
     # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='qc_absolute')
     # eighteen_s_analysis.plot_seq_stacked_bar_plots(plot_type='med')
-    eighteen_s_analysis.plot_pcoa_spp(distance_method='unifrac', crop_seqs=True, square_root_trans=True)
+    # eighteen_s_analysis.plot_pcoa_spp(distance_method='unifrac', crop_seqs=True, square_root_trans=False)
     # eighteen_s_analysis.plot_pcoa_spp_island(distance_method='unifrac', crop_seqs=True)
     # eighteen_s_analysis.plot_pcoa_spp_18s_its2(distance_method='unifrac', crop_seqs=True)
     # eighteen_s_analysis.correlate_18S_clustering_to_snp_clustering(distance_method='unifrac', spp='pocillopora', square_root_trans=False)

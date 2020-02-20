@@ -14,3 +14,8 @@ sample_abundance_df.pkl
 *.pickle
 www.genoscope.cns.fr/
 18S_V9_1389F_1510R/
+cluster_map_18S.txt
+figures/
+neidist_tri_LD02.csv
+provesti_tri_LD02.csv
+venn_f_r
